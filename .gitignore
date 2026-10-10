@@ -3,3 +3,4 @@ node_modules/
 /moodle/
 .env
 *.log
+testes/saida-simulacao.txt

@@ -119,42 +119,54 @@ async function resolverLinkLTI(cmid) {
     if (!roomMatch) { log("aviso", `[lti] sem room hash para cmid=${cmid}`); return null; }
     const roomHash = roomMatch[1];
 
-    // Seleciona grupo correto se houver mais de um
-    const groupRegex = /<option[^>]*value="(\d+)"[^>]*>([^<]+)<\/option>/g;
-    const groups = [];
-    let m;
-    while ((m = groupRegex.exec(page.body)) !== null) groups.push({ id: m[1], name: m[2] });
+    // A sala pode ter varios grupos do Moodle (ex.: "Aula Virtual", "Brumado", "Jacaraci"): o aluno participa
+    // de todos, mas a aula e agendada em so um deles (nos testes, sempre o "Aula Virtual", nunca o do polo).
+    // Por isso nao se escolhe pelo nome do polo: procura-se o grupo que TEM reuniao agendada.
+    let meetingId = extrairReuniao(page.body);
+    let grupoUsado = null;
 
-    let finalPage = page;
-    const correctGroup = groups.find(g => !/brumado/i.test(g.name));
+    const grupos = [...page.body.matchAll(/<option[^>]*value="(\d+)"[^>]*>([^<]+)<\/option>/g)]
+        .map(m => ({ id: m[1], nome: m[2].trim() }));
+    const csrf = page.body.match(/name="authenticity_token" value="([^"]+)"/)?.[1];
 
-    if (correctGroup && groups.length > 1) {
-        const csrfMatch = page.body.match(/name="authenticity_token" value="([^"]+)"/);
-        if (csrfMatch) {
-            const setGroupUrl = `https://lti.mconf.rnp.br/rooms/${roomHash}/set_current_group_on_session?redir_url=%2Frooms%2F${roomHash}`;
-            const groupResp = await httpsReq("POST", setGroupUrl, querystring.stringify({
-                utf8: "✓", authenticity_token: csrfMatch[1], group_id: correctGroup.id,
-            }), page.cookies);
-            if ([302, 303].includes(groupResp.status)) {
-                let loc = groupResp.headers.location;
-                if (!loc.startsWith("http")) loc = `https://lti.mconf.rnp.br${loc}`;
-                finalPage = await httpsReq("GET", loc, null, groupResp.cookies);
-            } else {
-                finalPage = groupResp;
-            }
+    if (!meetingId && grupos.length > 1 && csrf) {
+        // Ordem de tentativa: o grupo que funcionou da ultima vez, depois "aula/sala virtual", depois o resto
+        const preferido = grupoPorSala.get(roomHash);
+        const ordem = [...grupos].sort((a, b) => peso(b, preferido) - peso(a, preferido));
+        for (const g of ordem) {
+            const pagina = await trocarGrupo(roomHash, csrf, g.id, page.cookies);
+            meetingId = extrairReuniao(pagina.body);
+            if (meetingId) { grupoUsado = g.nome; grupoPorSala.set(roomHash, g.nome); break; }
         }
     }
 
-    // Extrai link da sessao agendada (so /external funciona sem auth)
-    const meetingMatch = finalPage.body.match(/\/rooms\/[a-f0-9]+\/scheduled_meetings\/([A-Za-z0-9_-]+)\/join/);
-    const publicUrl    = meetingMatch
-        ? `https://lti.mconf.rnp.br/rooms/${roomHash}/scheduled_meetings/${meetingMatch[1]}/external`
+    // Link da sessao agendada (so /external funciona sem login)
+    const publicUrl = meetingId
+        ? `https://lti.mconf.rnp.br/rooms/${roomHash}/scheduled_meetings/${meetingId}/external`
         : null;
 
     const result = { roomHash, publicUrl, ts: Date.now() };
     cache.set(cmid, result);
-    log("ok", `[lti] cmid=${cmid}: room=${roomHash}${publicUrl ? ` meeting=${meetingMatch[1]}` : " (sem sessao)"}`);
+    log("ok", `[lti] cmid=${cmid}: room=${roomHash}` +
+        (publicUrl ? ` meeting=${meetingId}${grupoUsado ? ` (grupo "${grupoUsado}")` : ""}` : " (sem sessao)"));
     return result;
+}
+
+// Grupo que tinha reuniao na ultima consulta de cada sala (evita testar todos de novo)
+const grupoPorSala = new Map();
+
+const peso = (g, preferido) => (g.nome === preferido ? 2 : 0) + (/aula virtual|sala virtual|virtual/i.test(g.nome) ? 1 : 0);
+
+const extrairReuniao = html => html.match(/\/rooms\/[a-f0-9]+\/scheduled_meetings\/([A-Za-z0-9_-]+)\/join/)?.[1] || null;
+
+// Seleciona um grupo na sala Mconf e devolve a pagina resultante
+async function trocarGrupo(roomHash, csrf, groupId, cookies) {
+    const url  = `https://lti.mconf.rnp.br/rooms/${roomHash}/set_current_group_on_session?redir_url=%2Frooms%2F${roomHash}`;
+    const resp = await httpsReq("POST", url, querystring.stringify({ utf8: "✓", authenticity_token: csrf, group_id: groupId }), cookies);
+    if (![302, 303].includes(resp.status)) return resp;
+    let loc = resp.headers.location;
+    if (!loc.startsWith("http")) loc = `https://lti.mconf.rnp.br${loc}`;
+    return httpsReq("GET", loc, null, resp.cookies);
 }
 
 // Extrai cmid de uma descricao HTML e resolve o melhor link disponivel

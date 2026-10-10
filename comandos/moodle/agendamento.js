@@ -11,7 +11,6 @@ function agendar(hora, minuto, nome, fn) {
     if (proximo <= now) proximo = proximo.plus({ days: 1 });
 
     const ms = proximo.toMillis() - now.toMillis();
-    log("info", `Agendado [${nome}] -> ${proximo.toFormat("dd/MM HH:mm")} (em ${Math.round(ms / 60000)} min)`);
 
     setTimeout(async () => {
         log("info", `Executando [${nome}]`);
@@ -42,8 +41,7 @@ function agendarHeartbeat() {
         await tg(
             `*Moodle Monitor — Heartbeat semanal*\n` +
             `_${agora().toFormat("dd/MM/yyyy HH:mm")}_\n\n` +
-            `WhatsApp: ${status}\n` +
-            `Verificacoes: 06h - 10h - 12h - 14h - 15h - 18h - 19h - 20h`
+            `WhatsApp: ${status}`
         );
         agendarHeartbeat();
     }, ms);

@@ -1,6 +1,6 @@
 'use strict';
 
-const { ADMIN, ADMIN_LID }         = require("./moodle/config");
+const { ehAdmin }                  = require("./moodle/config");
 const { buscarCursos }             = require("./moodle/api");
 const { normalizarNomeDisciplina } = require("./moodle/formatacao");
 
@@ -8,9 +8,8 @@ module.exports = {
     nome:  "/disciplinas",
     match: texto => texto === "/disciplinas",
 
-    executar: async ({ botWhatsApp, jid, jidUsuario }) => {
-        const isAdmin = [jid, jidUsuario].some(id => id === ADMIN || id === ADMIN_LID);
-        if (!isAdmin) return;
+    executar: async ({ botWhatsApp, jid, jidUsuario, msg }) => {
+        if (!ehAdmin(jid, jidUsuario, msg?.key?.remoteJidAlt, msg?.key?.participantAlt)) return;
 
         let cursos;
         try { cursos = await buscarCursos(); }

@@ -6,8 +6,25 @@ const { baixarArquivoComRetry }                    = require("./http");
 const { wa, broadcastArquivo }                     = require("./notificacoes");
 const { limparHTML, fmtData, normalizarNomeDisciplina, todosAnexos, linkAtiv } = require("./formatacao");
 
-// Todos os destinos configurados (grupos + pessoais)
-const TODOS = () => [...DESTINOS_GRUPO, ...DESTINOS_PESSOAL];
+// Todos os destinos configurados (grupos + pessoais). Sem DESTINOS, vai so para o admin.
+const TODOS = () => {
+    const d = [...DESTINOS_GRUPO, ...DESTINOS_PESSOAL];
+    return d.length ? d : [ADMIN];
+};
+
+// Textos acima disso viram arquivo .txt (no WhatsApp, mensagem longa vira "Ler mais" e polui a conversa)
+const LIMITE_TEXTO = 1000;
+
+// Envia um texto longo (descricao, aviso, feedback) direto ou, se passar do limite, como arquivo .txt
+async function enviarTextoOuArquivo(destinos, rotulo, texto, nomeArquivo = "descrição.txt") {
+    if (!texto) return;
+    if (texto.length <= LIMITE_TEXTO) {
+        for (const jid of destinos) { await wa(jid, `${rotulo}:\n\n\`\`\`\n${texto}\n\`\`\``); await sleep(400); }
+        return;
+    }
+    const buffer = Buffer.from(texto, "utf8");
+    await broadcastArquivo(buffer, "text/plain", nomeArquivo, destinos, `${rotulo} (texto longo, segue em arquivo)`);
+}
 
 // Envia notificacao completa de atividade (texto + link + descricao + anexos)
 async function enviarAtividade(destinos, nomeCurso, a, titulo = "*UMA NOVA ATIVIDADE FOI LANCADA NO MOODLE*") {
@@ -34,9 +51,7 @@ async function enviarAtividadesAgrupadas(destinos, lista) {
 
 // Descricao e anexos de uma atividade (prefixo identifica a atividade quando ha varias)
 async function enviarDetalhes(destinos, a, prefixo = "") {
-    const desc = limparHTML(a.intro);
-    if (desc)
-        for (const jid of destinos) { await wa(jid, `${prefixo}Descricao:\n\n\`\`\`\n${desc}\n\`\`\``); await sleep(400); }
+    await enviarTextoOuArquivo(destinos, `${prefixo}Descricao`, limparHTML(a.intro));
 
     const anexos = todosAnexos(a);
     if (!anexos.length) return;
@@ -67,4 +82,4 @@ async function enviarAnexosAtualizados(novosArqs, destinos = TODOS()) {
     }
 }
 
-module.exports = { enviarAtividade, enviarAtividadesAgrupadas,enviarAnexosAtualizados, TODOS };
+module.exports = { enviarAtividade, enviarAtividadesAgrupadas, enviarAnexosAtualizados, enviarTextoOuArquivo, LIMITE_TEXTO, TODOS };

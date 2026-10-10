@@ -21,14 +21,16 @@ function salvarCache() {
     } catch (e) { log("erro", "Falha ao salvar cache:", e.message); }
 }
 
-// Remove entradas antigas (atividades vencidas ha 30+ dias, aulas/foruns de dias passados)
+// Remove entradas antigas (avisos de vencimento de 30+ dias, aulas/foruns de dias passados).
+// Registros de tarefas/modulos/notas NAO sao removidos: sao eles que dizem ao bot o que ja existia
+// (apagar um deles faria a atividade ser avisada de novo como "nova").
 function purgarCache() {
     const hoje         = agora().toISODate();
-    const limiteAssign = agora().minus({ days: 30 }).toUnixInteger();
+    const limiteVenc   = agora().minus({ days: 30 }).toUnixInteger();
     let n = 0;
     for (const k of Object.keys(cache)) {
-        if (cache[k]?.duedate && cache[k].duedate < limiteAssign) { delete cache[k]; n++; continue; }
-        const m = k.match(/^(?:aula|forum)_\d+_(\d{4}-\d{2}-\d{2})$/);
+        if ((k.startsWith("venc_") && cache[k]?.duedate < limiteVenc) || (k.startsWith("lemb_") && cache[k]?.prazo < limiteVenc)) { delete cache[k]; n++; continue; }
+        const m = k.match(/^(?:aula_\d+|forum_\d+|extra_.+)_(\d{4}-\d{2}-\d{2})$/);
         if (m && m[1] < hoje) { delete cache[k]; n++; }
     }
     if (n > 0) { log("info", `Cache: ${n} entrada(s) antiga(s) removida(s).`); salvarCache(); }

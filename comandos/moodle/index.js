@@ -1,12 +1,12 @@
 'use strict';
 
-const { log, sleep }             = require("./utils");
+const { log, sleep, agora }      = require("./utils");
 const { tg, wa }                 = require("./notificacoes");
 const { ADMIN }                  = require("./config");
 const { classificarErro }        = require("./http");
 const { obterSiteInfo, relogin } = require("./auth");
-const { popularCacheInicial, verificarNovas, verificarModulos, verificarAvisos, verificarAtualizacoes, verificarVencimentos, verificarLinks, verificarForuns, verificarAulasHoje } = require("./verificacoes");
 const { agendar, agendarHeartbeat } = require("./agendamento");
+const { AGENDA, AO_INICIAR }     = require("./rotina");
 
 const BACKOFF_INDISPO = [2, 4, 8, 16, 30]; // minutos — trava em 30min
 
@@ -61,20 +61,14 @@ const aguardandoBot = setInterval(async () => {
     try { await aguardarMoodle(); }
     catch { return; }
 
-    await popularCacheInicial();
-
-    agendar(6,  0, "Novas atividades",  verificarNovas);
-    for (const h of [6, 9, 12, 15, 18, 21]) {
-        agendar(h, 5,  `Novos modulos ${h}h`, verificarModulos);
-        agendar(h, 10, `Avisos ${h}h`,        verificarAvisos);
+    for (const [nome, fn, aPartirDe] of AO_INICIAR) {
+        if (agora().hour < aPartirDe) continue;
+        try { await fn(); }
+        catch (e) { log("erro", `[${nome}] na inicializacao: ${e.message}`); }
     }
-    agendar(10, 0, "Atualizacoes",      verificarAtualizacoes);
-    agendar(12, 0, "Vencimentos",       verificarVencimentos);
-    agendar(14, 0, "Foruns do dia",     verificarForuns);
-    agendar(15, 0, "Links de aulas",    verificarLinks);
-    agendar(18, 0, "Aulas do dia",      verificarAulasHoje);
-    agendar(19, 0, "Aulas do dia 19h",  verificarAulasHoje);
-    agendar(20, 0, "Aulas do dia 20h",  verificarAulasHoje);
+
+    for (const [h, m, nome, fn] of AGENDA) agendar(h, m, nome, fn);
+    log("ok", `${AGENDA.length} verificacoes agendadas por dia.`);
     agendarHeartbeat();
 }, 1000);
 

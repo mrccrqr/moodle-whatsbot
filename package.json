@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test testes/*.test.js",
+    "simular": "node testes/simular.js",
+    "whatsapp": "node testes/whatsapp.js"
   },
   "description": "Bot WhatsApp para monitoramento e notificacoes automaticas do Moodle",
   "license": "ISC",

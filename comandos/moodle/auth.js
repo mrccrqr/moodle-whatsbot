@@ -1,22 +1,15 @@
 'use strict';
 
-const fs                                          = require("fs");
-const path                                        = require("path");
-const { ENV_PATH, HOST, estado }                  = require("./config");
+const { HOST, estado, definirNoEnv }              = require("./config");
 const { sleep, log }                              = require("./utils");
 const { classificarErro, postForm, telegramPost } = require("./http");
 
 // Salva o token no moodle/.env para sobreviver a reinicializacoes
 function salvarTokenNoEnv(novoToken) {
     try {
-        const dir = path.dirname(ENV_PATH);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        let conteudo = fs.existsSync(ENV_PATH) ? fs.readFileSync(ENV_PATH, "utf8") : "";
-        if (/^MOODLE_TOKEN=.*/m.test(conteudo))
-            conteudo = conteudo.replace(/^MOODLE_TOKEN=.*/m, `MOODLE_TOKEN=${novoToken}`);
-        else
-            conteudo = `MOODLE_TOKEN=${novoToken}\n` + conteudo;
-        fs.writeFileSync(ENV_PATH, conteudo, "utf8");
+        // Grava o token junto com o usuario dono dele (ver config.js)
+        definirNoEnv("MOODLE_TOKEN_USER", process.env.MOODLE_USER || "");
+        definirNoEnv("MOODLE_TOKEN", novoToken);
         log("ok", "Token persistido no .env com sucesso.");
     } catch (e) {
         log("erro", `Falha ao persistir token: ${e.message}`);

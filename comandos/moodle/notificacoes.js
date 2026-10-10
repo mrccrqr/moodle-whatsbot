@@ -3,6 +3,7 @@
 const { ADMIN, TG_TOKEN } = require("./config");
 const { sleep, log }      = require("./utils");
 const { telegramPost }    = require("./http");
+const { resolverJid }     = require("../../utils/jid");
 
 // Telegram: fallback opcional — envia se configurado, ignora silenciosamente se nao
 async function tg(texto) {
@@ -13,6 +14,7 @@ async function tg(texto) {
 
 // WhatsApp: tenta ate 5x com intervalo. Se falhar, notifica via Telegram
 async function wa(jid, texto) {
+    jid = await resolverJid(jid); // resolve o nono digito
     for (let t = 1; t <= 5; t++) {
         const bot = global.botAtivo;
         if (!bot) { await sleep(5000); continue; }
@@ -25,11 +27,15 @@ async function wa(jid, texto) {
 }
 
 // Envia arquivo via WhatsApp com retry
-async function waArquivo(jid, buffer, mimetype, filename) {
+async function waArquivo(jid, buffer, mimetype, filename, legenda) {
+    jid = await resolverJid(jid);
     for (let t = 1; t <= 5; t++) {
         const bot = global.botAtivo;
         if (!bot) { await sleep(5000); continue; }
-        try { await bot.sendMessage(jid, { document: buffer, mimetype, fileName: filename }); return true; }
+        try {
+            await bot.sendMessage(jid, { document: buffer, mimetype, fileName: filename, ...(legenda ? { caption: legenda } : {}) });
+            return true;
+        }
         catch { if (t < 5) await sleep(5000); }
     }
     log("erro", `WA arquivo falhou para ${jid}: ${filename}`);
@@ -43,10 +49,10 @@ async function broadcast(texto, destinos) {
 }
 
 // Broadcast de arquivo para lista de destinos
-async function broadcastArquivo(buffer, mimetype, filename, destinos) {
+async function broadcastArquivo(buffer, mimetype, filename, destinos, legenda) {
     let falhas = 0;
     for (const jid of destinos) {
-        if (!(await waArquivo(jid, buffer, mimetype, filename))) falhas++;
+        if (!(await waArquivo(jid, buffer, mimetype, filename, legenda))) falhas++;
         await sleep(400);
     }
     if (falhas > 0)

@@ -1,4 +1,5 @@
 require("dotenv").config({ quiet: true });
+require("./utils/silenciarSignal");
 const { default: criarSocket, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys");
 const { iniciarAutenticacao } = require("./utils/autenticacao");
 const { verificarMoodle }     = require("./utils/verificarMoodle");
@@ -53,6 +54,16 @@ async function iniciarWhatsApp() {
         if (connection === "open") console.log("[BOT] Conectado ao WhatsApp.");
     });
 
+    // Bot adicionado a um grupo: avisa os modulos interessados (ex.: comandos/destinos.js)
+    botWhatsApp.ev.on("groups.upsert", async grupos => {
+        for (const cmd of comandos)
+            if (typeof cmd.onGrupoNovo === "function")
+                for (const g of grupos) {
+                    try { await cmd.onGrupoNovo({ botWhatsApp, grupo: g, lote: grupos.length }); }
+                    catch (err) { console.error(`[onGrupoNovo] Erro no modulo ${cmd.nome || "?"}:`, err); }
+                }
+    });
+
     botWhatsApp.ev.on("messages.upsert", async ({ messages }) => {
         const msg = messages[0];
         if (!msg.message || !msg.key.remoteJid) return;
@@ -60,7 +71,7 @@ async function iniciarWhatsApp() {
         if (msg.key.remoteJid === "status@broadcast") return;
 
         const jid = msg.key.remoteJid;
-        if (jid.endsWith("@g.us")) return; // ignora mensagens de grupo
+        if (jid.endsWith("@g.us")) return; // ignora mensagens de grupo (comandos sao so no privado)
 
         const jidUsuario  = msg.key.participant || msg.key.remoteJid;
         const nomeUsuario = msg.pushName || jidUsuario;

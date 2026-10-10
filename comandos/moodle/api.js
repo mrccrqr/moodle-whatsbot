@@ -29,11 +29,53 @@ function validar(d, funcao, campo) {
     return d;
 }
 
-async function buscarAtividades() {
-    const d = await moodle({ wsfunction: "mod_assign_get_assignments" });
+// Monta parametros de array no formato do Moodle: nome[0]=a, nome[1]=b...
+const listaParam = (nome, valores) =>
+    Object.fromEntries(valores.map((v, i) => [`${nome}[${i}]`, v]));
+
+// Tarefas (mod_assign). Com courseIds, busca so esses cursos (resposta ~10x menor)
+async function buscarAtividades(courseIds = []) {
+    const d = await moodle({ wsfunction: "mod_assign_get_assignments", ...listaParam("courseids", courseIds) });
     if (d.exception || d.errorcode)
         throw Object.assign(new Error(d.message || "Erro em mod_assign_get_assignments"), { moodleError: d });
     return d;
+}
+
+// Notas totais de todos os cursos (1 requisicao) — usado para detectar em quais cursos algo mudou
+async function buscarNotasGerais() {
+    const d = await moodle({ wsfunction: "gradereport_overview_get_course_grades" });
+    return validar(d, "gradereport_overview_get_course_grades", "grades");
+}
+
+// Itens de nota do aluno em um curso (nota, data da correcao, feedback do livro de notas)
+async function buscarNotasCurso(courseid) {
+    if (!estado.userId) await obterSiteInfo();
+    const d = await moodle({ wsfunction: "gradereport_user_get_grade_items", courseid, userid: estado.userId });
+    return validar(d, "gradereport_user_get_grade_items", "usergrades")[0]?.gradeitems || [];
+}
+
+// Status da entrega de uma tarefa: traz o ID de quem corrigiu e os comentarios de feedback
+async function buscarStatusTarefa(assignid) {
+    const d = await moodle({ wsfunction: "mod_assign_get_submission_status", assignid });
+    if (d.exception || d.errorcode)
+        throw Object.assign(new Error(d.message || "Erro em mod_assign_get_submission_status"), { moodleError: d });
+    return d;
+}
+
+// Nome completo de um curso pelo ID (para cursos fora do semestre atual)
+async function buscarNomeCurso(id) {
+    const d = await moodle({ wsfunction: "core_course_get_courses_by_field", field: "id", value: id });
+    return d?.courses?.[0]?.fullname || `Curso ${id}`;
+}
+
+// Nome completo de um usuario (tutor/professor) pelo ID, com cache em memoria
+const nomesUsuarios = new Map();
+async function buscarNomeUsuario(id) {
+    if (nomesUsuarios.has(id)) return nomesUsuarios.get(id);
+    const d = await moodle({ wsfunction: "core_user_get_users_by_field", field: "id", "values[0]": id });
+    const nome = Array.isArray(d) ? d[0]?.fullname || null : null;
+    if (nome) nomesUsuarios.set(id, nome);
+    return nome;
 }
 
 async function buscarCategorias(parentId) {
@@ -49,6 +91,8 @@ async function buscarCursosPorCategoria(categoryId) {
     const d = await moodle({ wsfunction: "core_course_get_courses_by_field", field: "category", value: categoryId });
     return validar(d, "core_course_get_courses_by_field", "courses");
 }
+
+let cursosLogados = false;
 
 // Detecta semestre atual automaticamente:
 // 1. Se PARENT_CAT_ID configurado: busca por hierarquia de categorias
@@ -103,8 +147,17 @@ async function buscarCursos() {
     }
     if (semestresMap.size > 0) {
         const recente = Math.max(...semestresMap.keys());
-        log("info", `Semestre detectado via nome: ${Math.floor(recente / 10)}.${recente % 10}`);
-        return semestresMap.get(recente);
+        // Cursos sem (AAAA.S) no nome sao permanentes (Informes da Coordenacao, ATPA...):
+        // entram junto, a menos que tenham data de termino ja passada
+        const agoraS     = Date.now() / 1000;
+        const permanentes = d.filter(c => !/\(\d{4}\.\d\)/.test(c.fullname) && !(c.enddate && c.enddate < agoraS));
+        const cursos     = [...semestresMap.get(recente), ...permanentes];
+        if (!cursosLogados) {
+            log("info", `Semestre detectado via nome: ${Math.floor(recente / 10)}.${recente % 10}` +
+                (permanentes.length ? ` + ${permanentes.length} curso(s) permanente(s)` : ""));
+            cursosLogados = true;
+        }
+        return cursos;
     }
 
     // Ultimo recurso: cursos mais recentes por startdate
@@ -114,21 +167,6 @@ async function buscarCursos() {
     if (!top5.length) return d;
     const ref = top5[0].startdate;
     return top5.filter(c => ref - c.startdate <= 60 * 86400);
-}
-
-async function buscarConteudo(courseid) {
-    const d = await moodle({
-        wsfunction:             "core_course_get_contents",
-        courseid,
-        "options[0][name]":     "includestealthmodules",
-        "options[0][value]":    1,
-        "options[1][name]":     "modname",
-        "options[1][value]":    "url",
-        moodlewssettingfilter:  true,
-        moodlewssettingfileurl: true,
-        moodlewssettinglang:    "pt_br",
-    });
-    return validar(d, `core_course_get_contents(${courseid})`);
 }
 
 // Todos os modulos do curso, de qualquer tipo (quiz, forum, lesson, workshop, etc.)
@@ -147,9 +185,7 @@ async function buscarModulos(courseid) {
 
 // Foruns de avisos (type=news) dos cursos informados
 async function buscarForunsAvisos(courseIds) {
-    const payload = { wsfunction: "mod_forum_get_forums_by_courses" };
-    courseIds.forEach((id, i) => { payload[`courseids[${i}]`] = id; });
-    const d = await moodle(payload);
+    const d = await moodle({ wsfunction: "mod_forum_get_forums_by_courses", ...listaParam("courseids", courseIds) });
     return validar(d, 'mod_forum_get_forums_by_courses').filter(f => f.type === 'news');
 }
 
@@ -171,4 +207,6 @@ async function buscarAulasCalendario(ano, mes, dia) {
     return d.events;
 }
 
-module.exports = { moodle, buscarAtividades, buscarCategorias, buscarCursosPorCategoria, buscarCursos, buscarConteudo, buscarModulos, buscarForunsAvisos, buscarDiscussoes, buscarAulasCalendario };
+module.exports = {
+    buscarNotasGerais, buscarNotasCurso, buscarStatusTarefa, buscarNomeUsuario, buscarNomeCurso,
+    moodle, buscarAtividades, buscarCategorias, buscarCursosPorCategoria, buscarCursos, buscarModulos, buscarForunsAvisos, buscarDiscussoes, buscarAulasCalendario };
