@@ -14,8 +14,8 @@
 // da espera encerra a espera. Aceita variacoes de digitacao: /add-grupo, /addgrupo, /add grupo.
 //
 // Cartao de contato enviado SEM /add-pessoa antes nao adiciona ninguem (evita adicionar por engano,
-// ex. um contato encaminhado ao bot). Quem e adicionado recebe boas-vindas e pode responder SAIR.
-// Isso importa: mandar mensagem para quem nao pediu e o principal motivo de banimento de bots no WhatsApp.
+// ex. um contato encaminhado ao bot). O bot nao envia nada para quem e adicionado; so confirma ao admin.
+// Se a pessoa responder SAIR ao bot, e removida (e o admin e avisado).
 
 const { DESTINOS_GRUPO, DESTINOS_PESSOAL, ehAdmin, salvarDestinos, ADMIN } = require("./moodle/config");
 const { log }                       = require("./moodle/utils");
@@ -107,16 +107,14 @@ async function ativarGrupo(g) {
         : `O grupo *${g.subject}* já recebe as notificações do Moodle`;
 }
 
+// Adiciona a pessoa aos destinos. Nao envia nada para ela: so confirma ao admin.
 async function adicionarPessoa(jid, nome) {
     if (nome) { nomes()[jid] = nome; salvarCache(); }
+    const quem = nomes()[jid] || fmtNumero(jid);
     if (!alternar(DESTINOS_PESSOAL, jid, true))
-        return `*${rotuloPessoa(jid)}* já recebe as notificações do Moodle`;
+        return `${quem} já recebe atualizações do Moodle`;
     log("ok", `Pessoa adicionada aos destinos: ${rotuloPessoa(jid)} (${jid})`);
-    if (!mesmoNumero(jid, ADMIN))
-        await wa(jid,
-            `Olá${nome ? `, ${nome.split(" ")[0]}` : ""}! Você foi adicionado(a) para receber por aqui as notificações do Moodle ` +
-            `(atividades novas, prazos, avisos dos professores e aulas).\n\nSe não quiser receber, responda *SAIR*.`);
-    return `*${rotuloPessoa(jid)}* adicionado(a). Mandei uma mensagem de boas-vindas avisando que pode responder SAIR.`;
+    return `Pronto, ${quem} vai receber atualizações do Moodle a partir de agora`;
 }
 
 function removerDestino(item) {

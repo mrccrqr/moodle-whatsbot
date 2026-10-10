@@ -324,7 +324,8 @@ test("destinos: contato sem /add-pessoa nao adiciona; com /add-pessoa adiciona",
         await destinos.executar(contexto("/add-pessoa"));
         await destinos.onMensagem(contexto("", cartao));
         assert.ok(DESTINOS_PESSOAL.includes("5511999990000@s.whatsapp.net"));
-        assert.ok(enviados.some(e => /Fulano adicionado|SAIR/.test(e.texto)), "confirma ao admin e da boas-vindas");
+        assert.ok(enviados.some(e => e.jid === ADMIN && e.texto === "Pronto, Fulano vai receber atualizações do Moodle a partir de agora"), "confirma ao admin");
+        assert.ok(!enviados.some(e => e.jid !== ADMIN), "nada e enviado para a pessoa adicionada");
     } finally {
         global.botAtivo = anterior;
         DESTINOS_PESSOAL.splice(inicio);

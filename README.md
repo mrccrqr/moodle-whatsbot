@@ -121,9 +121,8 @@ Bot: Notificações do Moodle ativadas no grupo UESB - Academicos.Digital
 
 **`/add-pessoa`**: o bot pede o contato; envie o **cartao de contato** da pessoa (clipe > Contato) ou digite o
 numero com DDD. O cartao traz o numero exato do WhatsApp (sem erro de digitacao nem problema com o nono digito)
-e da para enviar varios de uma vez. Quem e adicionado recebe uma mensagem de boas-vindas e pode responder
-**SAIR** a qualquer momento (o admin e avisado). Mandar mensagens para quem nao pediu e o principal motivo de
-banimento de numeros de bot no WhatsApp.
+e da para enviar varios de uma vez. Resposta: *Pronto, Fulano vai receber atualizações do Moodle a partir de
+agora*. O bot nao envia nada para a pessoa adicionada; se ela responder **SAIR** ao bot, e removida (o admin e avisado).
 
 **`/remover`**: lista grupos e pessoas que recebem e pergunta qual remover.
 
