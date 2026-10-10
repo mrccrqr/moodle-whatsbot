@@ -1,0 +1,16 @@
+{
+  "name": "moodle-whatsbot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "description": "Bot WhatsApp para monitoramento e notificacoes automaticas do Moodle",
+  "license": "ISC",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "dotenv": "^17.2.2",
+    "luxon": "^3.7.2",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "nomesCurtos": {
+    "Nome Completo da Disciplina no Moodle": "Nome Curto"
+  },
+  "linksFixos": {
+    "Nome Curto": "https://conferenciaweb.rnp.br/sala/exemplo"
+  },
+  "disciplinasIgnoradas": [],
+  "aulasExtras": []
+}
