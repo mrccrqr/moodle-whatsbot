@@ -82,4 +82,4 @@ async function enviarAnexosAtualizados(novosArqs, destinos = TODOS()) {
     }
 }
 
-module.exports = { enviarAtividade, enviarAtividadesAgrupadas, enviarAnexosAtualizados, enviarTextoOuArquivo, LIMITE_TEXTO, TODOS };
+module.exports = { enviarAtividade, enviarAtividadesAgrupadas, enviarDetalhes, enviarAnexosAtualizados, enviarTextoOuArquivo, LIMITE_TEXTO, TODOS };

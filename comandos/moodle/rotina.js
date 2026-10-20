@@ -1,20 +1,20 @@
 'use strict';
 
 const V = require("./verificacoes");
+const { verificarNovidades } = require("./novidades");
 
 // Agenda diaria de verificacoes: [hora, minuto, nome, funcao]
 // Fica num lugar so para ser usada pelo bot (index.js) e pelos testes de simulacao.
 const AGENDA = [];
 
-// Deteccao de conteudo novo (tarefas, modulos/links, avisos): varias vezes ao dia para nao atrasar
+// Novidades (atividades, prazos alterados, materiais) e avisos dos professores: varias vezes ao dia.
+// Novidades saem numa mensagem por disciplina; se o professor estiver mexendo, esperam ele terminar.
 for (const h of [6, 9, 12, 15, 18, 21]) {
-    AGENDA.push([h, 0,  `Tarefas novas ${h}h`, V.verificarNovas]);
-    AGENDA.push([h, 5,  `Novos modulos ${h}h`, V.verificarModulos]);
-    AGENDA.push([h, 10, `Avisos ${h}h`,        V.verificarAvisos]);
+    AGENDA.push([h, 0, `Novidades ${h}h`, verificarNovidades]);
+    AGENDA.push([h, 5, `Avisos ${h}h`,    V.verificarAvisos]);
 }
 
 AGENDA.push(
-    [10, 0, "Atualizacoes",     V.verificarAtualizacoes],
     [12, 0, "Vencimentos",      V.verificarVencimentos],
     [12, 0, "Lembretes",        V.verificarLembretes],
     [14, 0, "Foruns do dia",    V.verificarForuns],
@@ -34,8 +34,7 @@ AGENDA.sort((a, b) => a[0] * 60 + a[1] - (b[0] * 60 + b[1]));
 // o cache impede envio em dobro caso ja tenham sido enviados hoje.
 // [nome, funcao, a partir de que hora do dia]
 const AO_INICIAR = [
-    ["Tarefas novas", V.verificarNovas,       0],
-    ["Novos modulos", V.verificarModulos,     0],
+    ["Novidades",     verificarNovidades,     0],
     ["Avisos",        V.verificarAvisos,      0],
     ["Notas",         V.verificarNotas,       0],
     ["Vencimentos",   V.verificarVencimentos, 12],

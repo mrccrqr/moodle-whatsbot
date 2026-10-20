@@ -32,7 +32,8 @@ notif.wa               = async (jid, texto) => { enviados.push({ tipo: "texto", 
 notif.broadcastArquivo = async (buffer, mime, nome, destinos, legenda) => { enviados.push({ tipo: "arquivo", nome, legenda, texto: buffer.toString("utf8") }); };
 
 const { enviarTextoOuArquivo, LIMITE_TEXTO } = require("../comandos/moodle/envios");
-const { montarMsgVencimentos, montarMsgLinks, nomeDoEvento, diasAte } = require("../comandos/moodle/verificacoes");
+const { montarMsgVencimentos, nomeDoEvento, diasAte } = require("../comandos/moodle/verificacoes");
+const { detectar, montarMsgNovidades, classificarPrazo } = require("../comandos/moodle/novidades");
 
 // ---------------------------------------------------------------- lembretes
 
@@ -122,14 +123,108 @@ test("vencimentos: varias atividades viram uma mensagem so", () => {
     assert.match(msg, /Programação Web II: B/);
 });
 
-test("links: agrupados por disciplina, com a URL externa", () => {
-    const link = (curso, nome, url) => ({ curso: { fullname: curso }, m: { name: nome, url: "https://moodle/x", contents: [{ fileurl: url }] } });
-    const msg = montarMsgLinks([
-        link("Banco de Dados II (2026.2)", "Aula 07", "https://eduplay/1"),
-        link("Programação Web II (2026.2)", "Aula VI", "https://eduplay/2"),
+// ---------------------------------------------------------------- novidades
+
+test("novidades: classifica a mudanca de prazo", () => {
+    const hoje = ts("2026-10-20T10:00");
+    assert.equal(classificarPrazo(ts("2026-10-06T23:59"), ts("2026-10-28T23:59"), hoje), "reaberto");
+    assert.equal(classificarPrazo(ts("2026-10-22T23:59"), ts("2026-10-28T23:59"), hoje), "estendido");
+    assert.equal(classificarPrazo(ts("2026-10-28T23:59"), ts("2026-10-22T23:59"), hoje), "antecipado");
+    assert.equal(classificarPrazo(null, ts("2026-10-28T23:59"), hoje), "definido");
+    assert.equal(classificarPrazo(ts("2026-10-28T23:59"), ts("2026-10-01T23:59"), hoje), null, "prazo novo ja vencido: nada a avisar");
+});
+
+// Reproducao do que aconteceu em Desenvolvimento Mobile I em 19/10/2026 (dados reais do Moodle)
+test("novidades: semana montada aos poucos vira uma mensagem organizada, sem ruido", () => {
+    const agoraTs = ts("2026-10-20T06:00");
+    const tarefa  = (id, cmid, name, due) => ({ id, cmid, name, duedate: ts(due), timemodified: 1, intro: "" });
+    const cache = {
+        // ja conhecidas pelo bot antes de 19/10
+        assign_1: { visto: 1, duedate: ts("2026-09-07T23:59"), anexos: [] },               // antiga "Atividade 4" (sem nome guardado)
+        assign_2: { visto: 1, nome: "Atividade 6 - entrega do GitHub", duedate: ts("2026-09-28T23:59"), anexos: [] },
+        assign_3: { visto: 1, nome: "Local de envio da atividade 7", duedate: ts("2026-10-06T23:59"), anexos: [] },
+    };
+    const tarefas = [
+        tarefa(1, 30089, "Atividade 9 - Envie o link do código da semana no Github", "2026-10-26T23:59"), // reaproveitou a 4
+        tarefa(2, 30525, "Atividade 6 - entrega do GitHub", "2026-10-28T23:59"),                         // reaberta
+        tarefa(3, 30735, "Local de envio da atividade 7", "2026-10-28T23:59"),                           // reaberta
+        tarefa(4, 31001, "Local de envio da atividade 8", "2026-10-26T23:59"),                           // liberada (nova)
+        tarefa(5, 31596, "Atividade 4 - Envie o link do código da semana no Github", "2026-09-07T23:59"), // copia da antiga
+    ];
+    const mod = (id, modname, name, extra = {}) => ({ id, modname, name, url: `https://moodle/${id}`, dates: [], ...extra });
+    const modulos = [
+        mod(31587, "page", "Agenda da Semana 6"),
+        mod(31591, "resource", "Programação assíncrona"),
+        mod(31594, "url", "Vídeoaula - exemplo programação síncrona", { contents: [{ fileurl: "https://www.youtube.com/watch?v=Qa7zno" }] }),
+        mod(31599, "url", "Videoaula: Orientação a Objetos em Dart (copiado)", { contents: [{ fileurl: "https://youtu.be/x" }] }),
+    ];
+
+    const r = detectar({ tarefas, modulos, cache, agoraTs });
+
+    assert.deepEqual(r.atividades.map(a => a.nome), [
+        "Atividade 9 - Envie o link do código da semana no Github",   // reaproveitada = nova (nao "prazo estendido")
+        "Local de envio da atividade 8",
     ]);
-    assert.match(msg, /^\*2 NOVOS LINKS\*/);
-    assert.match(msg, /\*Banco de Dados II\*\n- Aula 07\n  https:\/\/eduplay\/1/);
+    assert.deepEqual(r.prazos.map(p => [p.nome, p.tipo]), [
+        ["Atividade 6 - entrega do GitHub", "reaberto"],
+        ["Local de envio da atividade 7", "reaberto"],
+    ]);
+    assert.deepEqual(r.materiais.map(m => [m.nome, m.rotulo]), [
+        ["Agenda da Semana 6", "página"],
+        ["Programação assíncrona", "arquivo"],
+        ["Vídeoaula - exemplo programação síncrona", "vídeo"],
+    ], "rascunho (copiado) fica de fora");
+    assert.ok(r.silencio.some(([k]) => k === "assign_5"), "copia com prazo vencido: so registra, nao anuncia");
+
+    const msg = montarMsgNovidades("Desenvolvimento Mobile I", r);
+    const esperado = [
+        "*NOVIDADES EM DESENVOLVIMENTO MOBILE I*",
+        "",
+        "*Atividades novas*",
+        "- Atividade 9 - Envie o link do código da semana no Github",
+        "  Vence 26/10 as 23h59",
+        "  https://moodle4.uesb.br/mod/assign/view.php?id=30089",
+        "",
+        "- Local de envio da atividade 8",
+        "  Vence 26/10 as 23h59",
+        "  https://moodle4.uesb.br/mod/assign/view.php?id=31001",
+        "",
+        "*Prazos reabertos*",
+        "- Atividade 6 - entrega do GitHub: até 28/10 as 23h59 (tinha encerrado em 28/09)",
+        "  https://moodle4.uesb.br/mod/assign/view.php?id=30525",
+        "",
+        "- Local de envio da atividade 7: até 28/10 as 23h59 (tinha encerrado em 06/10)",
+        "  https://moodle4.uesb.br/mod/assign/view.php?id=30735",
+        "",
+        "*Materiais*",
+        "- Agenda da Semana 6 (página)",
+        "  https://moodle/31587",
+        "",
+        "- Programação assíncrona (arquivo)",
+        "  https://moodle/31591",
+        "",
+        "- Vídeoaula - exemplo programação síncrona (vídeo)",
+        "  https://www.youtube.com/watch?v=Qa7zno",
+    ].join("\n");
+    assert.equal(msg, esperado);
+});
+
+test("novidades: rascunho renomeado depois e anunciado com o nome final", () => {
+    const agoraTs = ts("2026-10-20T06:00");
+    const m = (name) => ({ id: 1, modname: "resource", name, url: "https://moodle/1", dates: [] });
+    assert.equal(detectar({ tarefas: [], modulos: [m("Slides (copiado)")], cache: {}, agoraTs }).materiais.length, 0);
+    assert.deepEqual(detectar({ tarefas: [], modulos: [m("Slides aula 7")], cache: {}, agoraTs }).materiais.map(x => x.nome), ["Slides aula 7"]);
+});
+
+test("novidades: prazo estendido de atividade ainda aberta continua sendo 'estendido'", () => {
+    const agoraTs = ts("2026-10-20T06:00");
+    const r = detectar({
+        tarefas: [{ id: 1, cmid: 9, name: "Trabalho", duedate: ts("2026-10-30T23:59"), timemodified: 1 }],
+        modulos: [], agoraTs,
+        cache: { assign_1: { visto: 1, nome: "Trabalho", duedate: ts("2026-10-22T23:59"), anexos: [] } },
+    });
+    assert.deepEqual(r.prazos.map(p => p.tipo), ["estendido"]);
+    assert.ok(montarMsgNovidades("Web II", r).includes("*Prazo estendido*\n- Trabalho: agora vence 30/10 as 23h59 (antes: 22/10 as 23h59)"));
 });
 
 test("calendario: nome limpo do evento de prazo", () => {

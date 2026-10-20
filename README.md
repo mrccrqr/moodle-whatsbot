@@ -8,15 +8,35 @@ Feito para turmas de EaD que querem receber tudo direto no WhatsApp (grupo da tu
 
 **Para a turma** (enviado aos `DESTINOS`):
 
-- **Atividades novas de qualquer tipo**: tarefas (com descricao e anexos), questionarios, foruns, licoes, workshops, arquivos, pastas, paginas, H5P etc.
-- **Links e gravacoes novos**: links do EduPlay, Kahoot, Wordwall e similares adicionados nas disciplinas
+- **Novidades por disciplina, numa mensagem so**: atividades novas (tarefas, questionarios, foruns, licoes...),
+  prazos reabertos/estendidos, materiais (arquivos, paginas, links e videos) e arquivos novos em atividades.
+  Descricoes e anexos das atividades seguem logo depois. Exemplo:
+  ```
+  NOVIDADES EM DESENVOLVIMENTO MOBILE I
+
+  Atividades novas
+  - Atividade 9 - Envie o link do codigo da semana no Github
+    Vence 26/10 as 23h59
+    https://moodle4.uesb.br/mod/assign/view.php?id=30089
+
+  Prazos reabertos
+  - Atividade 6 - entrega do GitHub: ate 28/10 as 23h59 (tinha encerrado em 28/09)
+    https://moodle4.uesb.br/mod/assign/view.php?id=30525
+
+  Materiais
+  - Programacao assincrona (arquivo)
+    https://moodle4.uesb.br/mod/resource/view.php?id=31591
+  ```
+- **Espera o professor terminar**: se a disciplina teve alteracoes nos ultimos 30 minutos, as novidades dela ficam
+  para a proxima verificacao (no maximo 6h). Uma semana montada aos poucos sai numa mensagem so
+- **Sem rascunhos nem ruido**: itens com "(copiado)" no nome esperam o nome final; item "novo" com prazo ja vencido
+  (copia ou atividade antiga) nao e anunciado; atividade antiga reaproveitada com prazo novo sai como atividade nova
 - **Avisos dos professores**: posts nos foruns de avisos, com autor e texto
 - **Vence hoje**: tarefas, questionarios e demais atividades com prazo no dia. Se o prazo foi estendido, a mensagem diz que ja avisou antes e qual era o prazo anterior
 - **Lembretes no meio do prazo**: alem do lancamento e do "vence hoje", de 0 a 3 lembretes conforme a duracao (ex.: prazo de 1 mes -> "faltam 2 semanas"; prazo de 2 meses -> 6 e 3 semanas; menos de 4 dias -> nenhum)
-- **Atualizacoes**: prazo estendido/alterado e arquivos novos em atividades ja avisadas
 - **Foruns com prazo hoje**
 - **Aulas ao vivo**: avisa antes das aulas com o link da sala (Mconf/ConferenciaWeb), juntando eventos duplicados da mesma sala
-- **Mensagens unificadas**: varios itens do mesmo tipo saem em uma mensagem so ("3 NOVOS LINKS", "2 ATIVIDADES VENCEM HOJE"...)
+- **Mensagens unificadas**: varios itens saem em uma mensagem so ("NOVIDADES EM ...", "2 ATIVIDADES VENCEM HOJE", "3 AULAS"...)
 - **Textos longos em arquivo**: descricoes, avisos e feedbacks com mais de 1000 caracteres vao como `descrição.txt` (ou `aviso.txt`/`feedback.txt`) em vez de uma mensagem gigante
 - **Legendas EduPlay**: envia a legenda em texto ao receber link do EduPlay
 - **Comando /disciplinas**: lista as disciplinas do semestre atual
@@ -31,6 +51,10 @@ Feito para turmas de EaD que querem receber tudo direto no WhatsApp (grupo da tu
 - **Credenciais verificadas antes do WhatsApp**: se `MOODLE_USER`/`MOODLE_PASS` estiverem vazios ou errados, avisa e encerra antes de mostrar o QR code
 - **Deteccao por ID**: atividades, modulos e links novos sao detectados pelo ID, nao por data. Nada se perde se o professor criar uma atividade oculta e liberar dias depois, ou se so editar um link antigo
 - **Recupera o que perdeu**: ao religar depois de um periodo desligado, avisa o que apareceu nesse tempo e os avisos do dia que ja deveriam ter saido
+- **Avisa quando ficou fora do ar**: se passou mais de 2h sem rodar (bot desligado, computador suspenso), ao voltar
+  ele confere tudo e manda ao admin: "Fiquei fora do ar de 19/10 06:05 ate 19/10 19:03..."
+- **Sessao do WhatsApp encerrada**: se o aparelho do bot for desconectado, o bot para com a instrucao para parear
+  de novo, em vez de continuar rodando sem enviar nada
 - **So o semestre atual**: disciplinas de semestres anteriores (repercurso) sao ignoradas; cursos permanentes sem semestre no nome (ex.: Informes da Coordenacao, ATPA) entram automaticamente
 - **Independe do seu progresso**: atividades que voce ja entregou continuam sendo avisadas para a turma
 - **Auto-login**: token do Moodle gerado e renovado automaticamente
@@ -40,9 +64,8 @@ Feito para turmas de EaD que querem receber tudo direto no WhatsApp (grupo da tu
 
 | Horario                                   | Verificacao                                              |
 | ----------------------------------------- | -------------------------------------------------------- |
-| Ao iniciar                                | Conteudo novo, notas e avisos do dia que ja passaram     |
-| 06h, 09h, 12h, 15h, 18h, 21h              | Tarefas novas (:00), modulos e links novos (:05), avisos (:10) |
-| 10:00                                     | Atualizacoes (prazos estendidos, novos arquivos)         |
+| Ao iniciar (e ao voltar de uma pausa)     | Novidades, notas e avisos do dia que ja passaram         |
+| 06h, 09h, 12h, 15h, 18h, 21h              | Novidades por disciplina (:00) e avisos dos professores (:05) |
 | 12:00                                     | Atividades que vencem hoje e lembretes de prazo          |
 | 14:00                                     | Foruns com prazo hoje                                    |
 | 18:00, 19:00, 20:00                       | Aulas ao vivo do dia                                     |
@@ -203,7 +226,9 @@ moodle-whatsbot/
     moodle/
       index.js              # Inicializacao do monitor do Moodle
       rotina.js             # Agenda de verificacoes (horarios)
-      verificacoes.js       # Verificacoes: novas, modulos, avisos, vencimentos, aulas, notas...
+      novidades.js          # Novidades por disciplina (atividades, prazos, materiais), espera o professor terminar
+      verificacoes.js       # Avisos, vencimentos, lembretes, foruns, aulas, notas
+      comum.js              # Auxiliares compartilhados pelas verificacoes
       lembretes.js          # Regra dos lembretes intermediarios de prazo
       api.js                # Chamadas a API do Moodle
       auth.js               # Login e renovacao de token

@@ -71,6 +71,8 @@ const CENARIOS = process.env.SEM_CENARIOS ? {} : {
     // Bot desligado (queda de energia, PC desligado...): de 08/10 00h ate 08/10 15h
     desligado: [ts("2026-10-08T00:00"), ts("2026-10-08T15:00")],
 };
+// Bot desligado num periodo qualquer, mesmo sem os cenarios: DESLIGADO=2026-10-19T00:00,2026-10-19T19:00
+if (process.env.DESLIGADO) CENARIOS.desligado = process.env.DESLIGADO.split(",").map(ts);
 
 api.buscarAtividades = async ids => {
     const d = await orig.buscarAtividades(ids);
@@ -83,7 +85,32 @@ api.buscarAtividades = async ids => {
     return d;
 };
 const ehFuturo = m => (CENARIOS.criados?.[m.id] || 0) > nowS();
-api.buscarModulos = async id => (await orig.buscarModulos(id)).map(s => ({ ...s, modules: (s.modules || []).filter(m => !ehFuturo(m)) }));
+
+// Modulos criados durante o periodo simulado: o Moodle nao informa a data de criacao, entao estimamos pela
+// ultima edicao (core_course_get_updates_since) dos modulos com ID maior que o de todos os que nao mudaram.
+const criacaoEstimada = new Map(); // courseid -> Map(cmid -> momento)
+async function estimarCriacao(courseid, modulos) {
+    if (criacaoEstimada.has(courseid)) return criacaoEstimada.get(courseid);
+    const ultimaEdicao = new Map();
+    try {
+        for (const i of await orig.buscarAlteracoesDesde(courseid, INICIO.toSeconds()))
+            for (const u of i.updates || []) if (u.name === "configuration" && u.timeupdated)
+                ultimaEdicao.set(i.id, Math.max(ultimaEdicao.get(i.id) || 0, u.timeupdated));
+    } catch {}
+    const limite = Math.max(0, ...modulos.filter(m => m.modname !== "assign" && !ultimaEdicao.has(m.id)).map(m => m.id));
+    const mapa = new Map([...ultimaEdicao].filter(([id]) => id > limite));
+    criacaoEstimada.set(courseid, mapa);
+    return mapa;
+}
+api.buscarModulos = async id => {
+    const secoes = await orig.buscarModulos(id);
+    const criacao = await estimarCriacao(id, secoes.flatMap(s => s.modules || []));
+    return secoes.map(s => ({ ...s, modules: (s.modules || []).filter(m => !ehFuturo(m) && !((criacao.get(m.id) || 0) > nowS())) }));
+};
+// "O professor mexeu nos ultimos 30 min?" considerando so as edicoes ate o momento simulado
+api.buscarAlteracoesDesde = async (id, since) => (await orig.buscarAlteracoesDesde(id, since))
+    .map(i => ({ ...i, updates: (i.updates || []).filter(u => u.timeupdated && u.timeupdated >= since && u.timeupdated <= nowS()) }))
+    .filter(i => i.updates.length);
 // O calendario e historico, mas reflete a extensao do cenario (evento de prazo muda de dia)
 api.buscarAulasCalendario = async (a, m, d) => {
     const ev = await orig.buscarAulasCalendario(a, m, d);

@@ -50,7 +50,18 @@ async function iniciarWhatsApp() {
 
     botWhatsApp.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
         if (qr) { console.log("[QR] Escaneie o QR code abaixo:"); qrTerminal.generate(qr, { small: true }); }
-        if (connection === "close" && lastDisconnect?.error?.output?.statusCode !== 401) iniciarWhatsApp();
+        if (connection === "close") {
+            const codigo = lastDisconnect?.error?.output?.statusCode;
+            // 401 = sessao encerrada pelo WhatsApp (aparelho removido em "Aparelhos conectados" ou logout).
+            // Reconectar nao adianta: para o processo com a explicacao, em vez de ficar rodando sem enviar nada.
+            if (codigo === 401) {
+                console.error("[ERRO] O WhatsApp encerrou a sessao do bot (aparelho desconectado). " +
+                    "Pareie de novo com: npm run whatsapp -- parear <numero do bot>  e depois npm start");
+                process.exit(1);
+            }
+            console.log(`[BOT] Conexao com o WhatsApp caiu (codigo ${codigo ?? "?"}), reconectando...`);
+            iniciarWhatsApp();
+        }
         if (connection === "open") console.log("[BOT] Conectado ao WhatsApp.");
     });
 

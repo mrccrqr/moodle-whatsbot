@@ -1,8 +1,10 @@
 'use strict';
 
+const { DateTime }               = require("luxon");
 const { log, sleep, agora }      = require("./utils");
+const { getCache, salvarCache }  = require("./cache");
 const { tg, wa }                 = require("./notificacoes");
-const { ADMIN }                  = require("./config");
+const { ADMIN, ZONA }            = require("./config");
 const { classificarErro }        = require("./http");
 const { obterSiteInfo, relogin } = require("./auth");
 const { agendar, agendarHeartbeat } = require("./agendamento");
@@ -61,16 +63,50 @@ const aguardandoBot = setInterval(async () => {
     try { await aguardarMoodle(); }
     catch { return; }
 
-    for (const [nome, fn, aPartirDe] of AO_INICIAR) {
-        if (agora().hour < aPartirDe) continue;
-        try { await fn(); }
-        catch (e) { log("erro", `[${nome}] na inicializacao: ${e.message}`); }
-    }
+    await recuperar(getCache()._vivoEm);
 
     for (const [h, m, nome, fn] of AGENDA) agendar(h, m, nome, fn);
     log("ok", `${AGENDA.length} verificacoes agendadas por dia.`);
     agendarHeartbeat();
+    setInterval(pulso, PULSO_MS);
 }, 1000);
+
+// --- Saber quando o bot ficou fora do ar ---
+// A cada 5 min o bot marca "estou vivo" no cache. Ao iniciar, ou ao voltar de uma pausa (computador
+// suspenso, processo travado), se a ultima marca tem mais de 2h ele confere tudo o que mudou e avisa o admin.
+const PULSO_MS   = 5 * 60 * 1000;
+const AUSENCIA_S = 2 * 3600;
+let recuperando  = false;
+
+const marcarVivo = () => { getCache()._vivoEm = Math.floor(agora().toSeconds()); salvarCache(); };
+const fmtMomento = s => DateTime.fromSeconds(s).setZone(ZONA).toFormat("dd/MM HH:mm");
+
+// Roda as verificacoes de "ao iniciar" (conteudo novo e avisos do dia que ja passaram) e,
+// se o bot estava fora havia mais de 2h, avisa o admin.
+async function recuperar(ultimoVivo) {
+    if (recuperando) return;
+    recuperando = true;
+    try {
+        for (const [nome, fn, aPartirDe] of AO_INICIAR) {
+            if (agora().hour < aPartirDe) continue;
+            try { await fn(); }
+            catch (e) { log("erro", `[${nome}] na recuperacao: ${e.message}`); }
+        }
+        const agoraS = Math.floor(agora().toSeconds());
+        if (ultimoVivo && agoraS - ultimoVivo > AUSENCIA_S) {
+            log("aviso", `Bot ficou fora do ar de ${fmtMomento(ultimoVivo)} ate ${fmtMomento(agoraS)}.`);
+            await wa(ADMIN, `Fiquei fora do ar de ${fmtMomento(ultimoVivo)} até ${fmtMomento(agoraS)}. Já conferi tudo que mudou no Moodle nesse período.`);
+        }
+        marcarVivo();
+    } finally { recuperando = false; }
+}
+
+// Pulso periodico: se o intervalo desde a ultima marca for grande, o processo esteve parado -> recupera
+async function pulso() {
+    const ultimo = getCache()._vivoEm;
+    if (ultimo && Math.floor(agora().toSeconds()) - ultimo > AUSENCIA_S) await recuperar(ultimo);
+    else marcarVivo();
+}
 
 module.exports = {
     nome:     "moodle",

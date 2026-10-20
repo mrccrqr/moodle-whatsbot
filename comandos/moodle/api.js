@@ -183,6 +183,15 @@ async function buscarModulos(courseid) {
     return validar(d, `core_course_get_contents(${courseid})`);
 }
 
+// Itens do curso alterados desde um instante (edicao de configuracao, arquivos...).
+// Usado para saber se o professor esta mexendo na disciplina agora (core_course_get_updates_since).
+async function buscarAlteracoesDesde(courseid, since) {
+    const d = await moodle({ wsfunction: "core_course_get_updates_since", courseid, since: Math.floor(since) });
+    if (d?.exception || d?.errorcode)
+        throw Object.assign(new Error(d.message || "Erro em core_course_get_updates_since"), { moodleError: d });
+    return d.instances || [];
+}
+
 // Foruns de avisos (type=news) dos cursos informados
 async function buscarForunsAvisos(courseIds) {
     const d = await moodle({ wsfunction: "mod_forum_get_forums_by_courses", ...listaParam("courseids", courseIds) });
@@ -209,4 +218,4 @@ async function buscarAulasCalendario(ano, mes, dia) {
 
 module.exports = {
     buscarNotasGerais, buscarNotasCurso, buscarStatusTarefa, buscarNomeUsuario, buscarNomeCurso,
-    moodle, buscarAtividades, buscarCategorias, buscarCursosPorCategoria, buscarCursos, buscarModulos, buscarForunsAvisos, buscarDiscussoes, buscarAulasCalendario };
+    moodle, buscarAtividades, buscarCategorias, buscarCursosPorCategoria, buscarCursos, buscarModulos, buscarAlteracoesDesde, buscarForunsAvisos, buscarDiscussoes, buscarAulasCalendario };
