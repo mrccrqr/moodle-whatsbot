@@ -426,3 +426,91 @@ test("destinos: contato sem /add-pessoa nao adiciona; com /add-pessoa adiciona",
         DESTINOS_PESSOAL.splice(inicio);
     }
 });
+
+// ---------------------------------------------------------------- acesso ao Moodle (saude.js)
+
+test("acesso ao Moodle: avisa uma vez quando cai (dizendo se e bloqueio) e uma vez quando volta", async () => {
+    const { Settings } = require("luxon");
+    const saude = require("../comandos/moodle/saude");
+    const cache = require("../comandos/moodle/cache").getCache();
+    const anterior = { now: Settings.now, teste: saude.testarDoBrasil, estado: cache._acessoMoodle };
+    const t0 = ts("2026-10-23T16:30");
+    let agoraS = t0;
+    Settings.now = () => agoraS * 1000;
+    saude.testarDoBrasil = async () => "ok"; // responde do Brasil -> e bloqueio do servidor do bot
+    delete cache._acessoMoodle;
+    let recuperou = 0;
+    saude.aoVoltar(async () => { recuperou++; });
+    enviados.length = 0;
+    const msgs = () => enviados.map(e => e.texto);
+    try {
+        await saude.registrarFalha();                       // 16:30 primeira falha
+        assert.equal(saude.semAcesso(), false);
+        agoraS = t0 + 10 * 60; await saude.registrarFalha(); // 16:40
+        assert.equal(saude.semAcesso(), true, "depois de 2 min, desiste rapido");
+        assert.deepEqual(msgs(), [], "instabilidade de 10 min: ninguem e avisado");
+
+        agoraS = t0 + 31 * 60; await saude.registrarFalha(); // 17:01 -> 31 min sem acesso
+        assert.equal(msgs().length, 1);
+        assert.match(msgs()[0], /^Não consigo acessar o Moodle desde 23\/10 às 16:30, mas ele está no ar/);
+        assert.match(msgs()[0], /bloqueando o acesso do servidor do bot/);
+
+        for (const h of [1, 5, 20]) { agoraS = t0 + h * 3600; await saude.registrarFalha(); }
+        assert.equal(msgs().length, 1, "continua fora: nao repete o aviso");
+
+        agoraS = ts("2026-10-24T16:00"); await saude.registrarSucesso();
+        assert.equal(msgs().length, 2);
+        assert.equal(msgs()[1], "O acesso ao Moodle voltou. Fiquei sem acesso de 23/10 às 16:30 até 24/10 às 16:00. Já conferi o que mudou nesse período.");
+        assert.equal(recuperou, 1, "confere o que mudou quando volta");
+
+        await saude.registrarSucesso();
+        assert.equal(msgs().length, 2, "sucesso normal nao gera mensagem");
+        assert.equal(saude.semAcesso(), false);
+    } finally {
+        Settings.now = anterior.now;
+        saude.testarDoBrasil = anterior.teste;
+        saude.aoVoltar(null);
+        if (anterior.estado) cache._acessoMoodle = anterior.estado; else delete cache._acessoMoodle;
+    }
+});
+
+test("acesso ao Moodle: queda curta nao gera nenhum aviso, nem na volta", async () => {
+    const { Settings } = require("luxon");
+    const saude = require("../comandos/moodle/saude");
+    const cache = require("../comandos/moodle/cache").getCache();
+    const anterior = { now: Settings.now, estado: cache._acessoMoodle };
+    let agoraS = ts("2026-10-23T10:00");
+    Settings.now = () => agoraS * 1000;
+    delete cache._acessoMoodle;
+    enviados.length = 0;
+    try {
+        await saude.registrarFalha();
+        agoraS += 20 * 60; await saude.registrarFalha();
+        agoraS += 5 * 60;  await saude.registrarSucesso();
+        assert.deepEqual(enviados, []);
+    } finally {
+        Settings.now = anterior.now;
+        if (anterior.estado) cache._acessoMoodle = anterior.estado; else delete cache._acessoMoodle;
+    }
+});
+
+test("acesso ao Moodle: fora do ar de verdade (nao responde nem do Brasil)", async () => {
+    const { Settings } = require("luxon");
+    const saude = require("../comandos/moodle/saude");
+    const cache = require("../comandos/moodle/cache").getCache();
+    const anterior = { now: Settings.now, teste: saude.testarDoBrasil, estado: cache._acessoMoodle };
+    let agoraS = ts("2026-10-23T10:00");
+    Settings.now = () => agoraS * 1000;
+    saude.testarDoBrasil = async () => "falha";
+    delete cache._acessoMoodle;
+    enviados.length = 0;
+    try {
+        await saude.registrarFalha();
+        agoraS += 40 * 60; await saude.registrarFalha();
+        assert.deepEqual(enviados.map(e => e.texto), ["O Moodle está fora do ar desde 23/10 às 10:00 (não responde nem a partir do Brasil). Aviso aqui quando voltar."]);
+    } finally {
+        Settings.now = anterior.now;
+        saude.testarDoBrasil = anterior.teste;
+        if (anterior.estado) cache._acessoMoodle = anterior.estado; else delete cache._acessoMoodle;
+    }
+});

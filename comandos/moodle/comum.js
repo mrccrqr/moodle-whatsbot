@@ -3,7 +3,6 @@
 // Auxiliares usados por varias verificacoes (verificacoes.js, novidades.js).
 
 const { agora, log }     = require("./utils");
-const { retry }          = require("./auth");
 const { buscarCursos }   = require("./api");
 
 // Impede que a mesma verificacao rode em paralelo
@@ -22,7 +21,7 @@ let _semestre = null, _semestreTs = 0;
 async function cursosDoSemestre() {
     const ts = agora().toMillis();
     if (!_semestre || ts - _semestreTs > 6 * 3600 * 1000 || ts < _semestreTs) {
-        const cursos = await retry(() => buscarCursos());
+        const cursos = await buscarCursos(); // buscarCursos ja tenta de novo por dentro (sem retry duplo)
         _semestre = { cursos, ids: new Set(cursos.map(c => c.id)) };
         _semestreTs = ts;
     }

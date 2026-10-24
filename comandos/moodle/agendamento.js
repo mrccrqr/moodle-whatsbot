@@ -3,8 +3,17 @@
 const { ADMIN }      = require("./config");
 const { agora, log } = require("./utils");
 const { wa, tg }     = require("./notificacoes");
+const { classificarErro } = require("./http");
 
 // Agenda execucao diaria em horario fixo (reagenda automaticamente apos cada execucao)
+// O mesmo erro so e enviado ao admin uma vez a cada 6h
+const ultimosErros = new Map();
+function repetido(msg) {
+    const agoraMs = Date.now(), antes = ultimosErros.get(msg);
+    ultimosErros.set(msg, agoraMs);
+    return antes && agoraMs - antes < 6 * 3600 * 1000;
+}
+
 function agendar(hora, minuto, nome, fn) {
     const now     = agora();
     let   proximo = now.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
@@ -18,8 +27,11 @@ function agendar(hora, minuto, nome, fn) {
         catch (e) {
             const msg = `Erro em [${nome}]: ${String(e?.message || e).slice(0, 300)}`;
             log("erro", msg);
-            await wa(ADMIN, `*Moodle Monitor*\n${msg}`);
-            await tg(`*Moodle Monitor*\n${msg}`);
+            // Moodle inacessivel: o admin e avisado uma unica vez por saude.js, nao a cada verificacao
+            if (classificarErro(e) !== "indispo" && !repetido(msg)) {
+                await wa(ADMIN, `*Moodle Monitor*\n${msg}`);
+                await tg(`*Moodle Monitor*\n${msg}`);
+            }
         }
         agendar(hora, minuto, nome, fn);
     }, ms);

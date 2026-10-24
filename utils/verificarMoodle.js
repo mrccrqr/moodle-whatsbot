@@ -9,11 +9,16 @@ const ENV_PATH = path.join(__dirname, "../moodle/.env");
 // Carrega moodle/.env sem poluir o terminal
 require("dotenv").config({ path: ENV_PATH, quiet: true });
 
+// Mesmo proxy opcional usado pelo bot para falar com o Moodle (ver comandos/moodle/http.js)
+const agente = process.env.MOODLE_PROXY
+    ? new (require("socks-proxy-agent").SocksProxyAgent)(process.env.MOODLE_PROXY)
+    : undefined;
+
 function tentarLogin(host, usuario, senha) {
     return new Promise((resolve, reject) => {
         const body = querystring.stringify({ username: usuario, password: senha, service: "moodle_mobile_app" });
         const req = https.request({
-            hostname: host, path: "/login/token.php?lang=pt_br", method: "POST", timeout: 15000,
+            hostname: host, path: "/login/token.php?lang=pt_br", method: "POST", timeout: 15000, agent: agente,
             headers: {
                 "Content-Type":   "application/x-www-form-urlencoded",
                 "Content-Length": Buffer.byteLength(body),

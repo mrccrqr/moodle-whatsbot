@@ -9,22 +9,19 @@ const { classificarErro }        = require("./http");
 const { obterSiteInfo, relogin } = require("./auth");
 const { agendar, agendarHeartbeat } = require("./agendamento");
 const { AGENDA, AO_INICIAR }     = require("./rotina");
+const saude                      = require("./saude");
 
 const BACKOFF_INDISPO = [2, 4, 8, 16, 30]; // minutos — trava em 30min
 
-// Aguarda o Moodle ficar disponivel antes de iniciar verificacoes
+// Espera o Moodle responder antes de iniciar as verificacoes.
+// Se estiver inacessivel, tenta de novo com intervalos crescentes; o aviso ao admin (uma vez so, dizendo se e
+// queda ou bloqueio) e feito por saude.js, a partir das falhas registradas em http.js.
 async function aguardarMoodle() {
     let tentativa = 0;
     while (true) {
         try {
             await obterSiteInfo();
-            if (tentativa > 0) {
-                const msg = `*Moodle Monitor*\nMoodle voltou ao ar apos ${tentativa} tentativa(s).`;
-                log("ok", "Moodle voltou!");
-                await Promise.all([tg(msg), wa(ADMIN, msg)]);
-            } else {
-                log("ok", "SiteInfo OK");
-            }
+            log("ok", tentativa > 0 ? "Moodle respondeu." : "SiteInfo OK");
             return;
         } catch (e) {
             const tipo = classificarErro(e);
@@ -41,13 +38,7 @@ async function aguardarMoodle() {
             }
 
             const minutos = BACKOFF_INDISPO[Math.min(tentativa, BACKOFF_INDISPO.length - 1)];
-            if (tentativa === 0) {
-                const msg = `*Moodle Monitor*\nMoodle parece estar fora do ar. Tentando a cada ${minutos}min.`;
-                log("aviso", `Moodle indisponivel (${e.message}).`);
-                await Promise.all([tg(msg), wa(ADMIN, msg)]);
-            } else {
-                log("aviso", `Moodle ainda fora — tentativa ${tentativa + 1}, proxima em ${minutos}min`);
-            }
+            log("aviso", `Moodle sem resposta (${e.message}) — tentativa ${tentativa + 1}, proxima em ${minutos}min`);
             tentativa++;
             await sleep(minutos * 60 * 1000);
         }
@@ -64,6 +55,7 @@ const aguardandoBot = setInterval(async () => {
     catch { return; }
 
     await recuperar(getCache()._vivoEm);
+    saude.aoVoltar(() => recuperar(null)); // acesso ao Moodle voltou: confere o que mudou (saude.js avisa o admin)
 
     for (const [h, m, nome, fn] of AGENDA) agendar(h, m, nome, fn);
     log("ok", `${AGENDA.length} verificacoes agendadas por dia.`);

@@ -5,10 +5,21 @@ const http        = require("http");
 const querystring = require("querystring");
 const { HOST, TG_TOKEN, TG_CHAT_ID } = require("./config");
 const { sleep, log } = require("./utils");
+const saude          = require("./saude");
+
+// Proxy opcional so para o Moodle (ex.: quando o Moodle bloqueia acesso de fora do Brasil).
+// MOODLE_PROXY=socks5://127.0.0.1:1080  -> todo acesso ao Moodle sai pelo proxy; o resto (WhatsApp etc.) nao.
+const PROXY        = process.env.MOODLE_PROXY || null;
+const agenteMoodle = PROXY ? new (require("socks-proxy-agent").SocksProxyAgent)(PROXY) : undefined;
+if (PROXY) log("info", `Acesso ao Moodle via proxy ${PROXY.replace(/\/\/.*@/, "//***@")}`);
+
+// Erros de rede que indicam Moodle inacessivel (o servidor nem respondeu direito)
+const ehFalhaDeRede = e => classificarErro(e) === "indispo";
 
 // Classifica erros da API do Moodle para decidir retry/relogin
 function classificarErro(e) {
     if (!e) return "outro";
+    if (e.tipoFinal) return e.tipoFinal; // erro que ja passou por retry(): mantem a classificacao original
     const code = e?.moodleError?.errorcode || e?.moodleError?.exception || "";
     if (code === "invalidtoken" || code === "accessdenied" || /token/i.test(code)) return "auth";
     if (e?.httpStatus === 401 || e?.httpStatus === 403) return "auth";
@@ -26,7 +37,7 @@ function postForm(caminho, payload, ms = 15000) {
     return new Promise((resolve, reject) => {
         const body = querystring.stringify(payload);
         const req  = https.request({
-            hostname: HOST, path: caminho, method: "POST", timeout: ms,
+            hostname: HOST, path: caminho, method: "POST", timeout: ms, agent: agenteMoodle,
             headers: {
                 "Content-Type":   "application/x-www-form-urlencoded",
                 "Content-Length": Buffer.byteLength(body),
@@ -36,16 +47,20 @@ function postForm(caminho, payload, ms = 15000) {
             let data = "";
             res.on("data", c => data += c);
             res.on("end", () => {
-                if (res.statusCode === 503)
-                    return reject(Object.assign(new Error("Moodle 503"), { code: "503" }));
+                if ([502, 503, 504].includes(res.statusCode)) {
+                    saude.registrarFalha().catch(() => {});
+                    return reject(Object.assign(new Error(`Moodle ${res.statusCode}`), { code: "503", httpStatus: res.statusCode }));
+                }
+                saude.registrarSucesso().catch(() => {});
                 if (res.statusCode !== 200 || !(res.headers["content-type"] || "").includes("application/json"))
                     return reject(Object.assign(new Error(`HTTP ${res.statusCode}`), { httpStatus: res.statusCode }));
                 try { resolve(JSON.parse(data)); }
                 catch (e) { reject(new Error(`JSON invalido: ${e.message}`)); }
             });
         });
-        req.on("timeout", () => { req.destroy(); reject(Object.assign(new Error("Timeout"), { code: "TIMEOUT" })); });
-        req.on("error", reject);
+        const falhar = e => { if (ehFalhaDeRede(e)) saude.registrarFalha().catch(() => {}); reject(e); };
+        req.on("timeout", () => { req.destroy(); falhar(Object.assign(new Error("Timeout"), { code: "TIMEOUT" })); });
+        req.on("error", falhar);
         req.write(body); req.end();
     });
 }
@@ -55,7 +70,8 @@ function baixarArquivo(url, redir = 0) {
     return new Promise((resolve, reject) => {
         if (redir > 5) return reject(new Error("Muitos redirecionamentos"));
         const lib = url.startsWith("https") ? https : http;
-        lib.get(url, { headers: { "User-Agent": "MoodleMobile 5.1.1 (51100)" } }, res => {
+        const doMoodle = (() => { try { return new URL(url).hostname === HOST; } catch { return false; } })();
+        lib.get(url, { headers: { "User-Agent": "MoodleMobile 5.1.1 (51100)" }, ...(doMoodle && agenteMoodle ? { agent: agenteMoodle } : {}) }, res => {
             if (res.statusCode === 301 || res.statusCode === 302)
                 return baixarArquivo(res.headers.location, redir + 1).then(resolve).catch(reject);
             if (res.statusCode !== 200) {

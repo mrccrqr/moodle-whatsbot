@@ -3,6 +3,7 @@
 const { HOST, estado, definirNoEnv }              = require("./config");
 const { sleep, log }                              = require("./utils");
 const { classificarErro, postForm, telegramPost } = require("./http");
+const saude                                       = require("./saude");
 
 // Salva o token no moodle/.env para sobreviver a reinicializacoes
 function salvarTokenNoEnv(novoToken) {
@@ -79,6 +80,10 @@ async function retry(fn, tentativas = 5) {
                 }
                 continue;
             }
+
+            // Moodle ja inacessivel ha alguns minutos: desiste ja (o aviso ao admin e feito uma vez, em saude.js)
+            if (tipo === "indispo" && saude.semAcesso())
+                throw Object.assign(new Error("Moodle inacessivel no momento"), { tipoFinal: "indispo", causaOriginal: e });
 
             if (t === tentativas) {
                 const motivo = tipo === "indispo" ? "Moodle pode estar fora do ar"
