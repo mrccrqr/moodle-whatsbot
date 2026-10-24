@@ -196,6 +196,7 @@ O bot primeiro confere o login no Moodle. Se estiver tudo certo, mostra o QR cod
 npm test          # testes rapidos e offline (lembretes, mensagens, formatacao)
 npm run simular   # simula os ultimos 7 dias com a agenda real e dados reais do Moodle
 npm run whatsapp  # diagnostico do WhatsApp: conta conectada, numero do admin (com/sem 9) e grupos com nome e ID
+npm run repasse   # acesso ao Moodle: status / criar / ligar / desligar / remover (ver docs/REPASSE.md)
 ```
 
 Para parear o bot por codigo em vez de QR: `npm run whatsapp -- parear 77991234567` (numero da conta do bot).
@@ -214,20 +215,15 @@ Brasilia, mesmo numa VPS na Europa). Para migrar: copie `moodle/` (`.env` e `cac
 
 ### Moodle bloqueado para o servidor (VPS fora do Brasil)
 
-Desde 23/10/2026 a UESB bloqueia o acesso ao Moodle a partir de fora do Brasil (o firewall descarta a conexao;
-cabecalhos como X-Forwarded-For nao ajudam, a conexao nem abre). Com o bot numa VPS no exterior, as chamadas ao
-Moodle saem por um repasse em Sao Paulo: um **API Gateway (HTTP API) da AWS na regiao sa-east-1**, que repassa
-`/{proxy+}` para `https://moodle4.uesb.br/{proxy}`. Custo: gratis no primeiro ano, depois ~US$ 0,01/mes.
+Quem roda o bot no Brasil nao precisa configurar nada. Fora do Brasil, o Moodle da UESB nao responde (bloqueio
+desde 23/10/2026); as chamadas ao Moodle podem sair por um **repasse em Sao Paulo** (API Gateway da AWS):
 
-```env
-MOODLE_API_HOST=xxxxxxxx.execute-api.sa-east-1.amazonaws.com
+```bash
+npm run repasse -- criar     # cria na SUA conta AWS, testa e grava no moodle/.env
 ```
 
-Os links enviados aos alunos continuam em `MOODLE_HOST`. Sem `MOODLE_API_HOST`, o bot acessa o Moodle direto.
-Alternativa: `MOODLE_PROXY=socks5://host:porta` (proxy SOCKS com saida no Brasil).
-
-Se o bot perder o acesso ao Moodle por mais de 30 min, ele avisa o admin **uma vez**, dizendo se o Moodle esta
-fora do ar ou bloqueando o servidor (testa a partir do Brasil), e **uma vez** quando o acesso volta.
+Para desligar sem apagar: `MOODLE_ACESSO=direto` (ou `npm run repasse -- desligar`). O bot nao guarda chave da
+AWS: so o endereco do repasse. Detalhes, custo (centavos por ano) e alternativas em [docs/REPASSE.md](docs/REPASSE.md).
 
 ## Proximos passos
 
@@ -260,6 +256,8 @@ moodle-whatsbot/
     eduplay.js              # Legendas do EduPlay
   testes/                   # npm test (unitarios) e npm run simular
   docs/LLM.md               # Notas para o futuro assistente com IA
+  docs/REPASSE.md           # Acesso ao Moodle fora do Brasil (repasse/proxy)
+  scripts/repasse.js        # npm run repasse
   utils/
     verificarMoodle.js      # Teste das credenciais antes de iniciar o WhatsApp
     telefone.js / jid.js    # Numeros (DDD + numero, nono digito) e resolucao do ID real no WhatsApp

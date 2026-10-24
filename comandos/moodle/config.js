@@ -3,6 +3,7 @@
 const fs   = require("fs");
 const path = require("path");
 const { paraJid, mesmoNumero, ehGrupo, ehLid } = require("../../utils/telefone");
+const { configAcesso }                          = require("../../utils/acessoMoodle");
 
 // Caminhos do projeto
 const DADOS_DIR        = path.join(__dirname, "../../moodle");
@@ -27,10 +28,10 @@ function obrigatorio(chave, padrao) {
 
 // --- Variaveis obrigatorias ---
 const HOST  = obrigatorio("MOODLE_HOST", "moodle4.uesb.br");
-// Por onde as chamadas ao Moodle saem. Normalmente o proprio Moodle; quando o Moodle bloqueia o servidor do bot
-// (ex.: acesso de fora do Brasil), aponte para um repasse no Brasil (ex.: API Gateway da AWS em sa-east-1).
+// Como o bot chega ao Moodle: direto, por um repasse no Brasil ou por proxy (MOODLE_ACESSO; ver docs/REPASSE.md).
 // Os links enviados aos alunos continuam usando MOODLE_HOST.
-const API_HOST = (process.env.MOODLE_API_HOST || "").trim().replace(/^https?:\/\//, "").replace(/\/+$/, "") || HOST;
+const ACESSO   = configAcesso();
+const API_HOST = ACESSO.apiHost;
 obrigatorio("MOODLE_USER");
 obrigatorio("MOODLE_PASS");
 
@@ -102,7 +103,7 @@ function salvarDestinos() {
 
 module.exports = {
     ENV_PATH, CACHE_PATH, LOG_PATH, DISCIPLINAS_PATH, DADOS_DIR,
-    ZONA, HOST, API_HOST, ADMIN, ADMIN_LID, PARENT_CAT_ID,
+    ZONA, HOST, API_HOST, ACESSO, ADMIN, ADMIN_LID, PARENT_CAT_ID,
     TG_TOKEN, TG_CHAT_ID,
     DESTINOS_GRUPO, DESTINOS_PESSOAL, ehAdmin, definirNoEnv, salvarDestinos,
     NOMES_CURTOS, LINKS_FIXOS, DISCIPLINAS_IGNORADAS, AULAS_EXTRAS,

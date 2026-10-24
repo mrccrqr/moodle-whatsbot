@@ -9,12 +9,9 @@ const ENV_PATH = path.join(__dirname, "../moodle/.env");
 // Carrega moodle/.env sem poluir o terminal
 require("dotenv").config({ path: ENV_PATH, quiet: true });
 
-// Mesmo proxy opcional usado pelo bot para falar com o Moodle (ver comandos/moodle/http.js)
-const agente = process.env.MOODLE_PROXY
-    ? new (require("socks-proxy-agent").SocksProxyAgent)(process.env.MOODLE_PROXY)
-    : undefined;
+const { configAcesso } = require("./acessoMoodle");
 
-function tentarLogin(host, usuario, senha) {
+function tentarLogin(host, usuario, senha, agente) {
     return new Promise((resolve, reject) => {
         const body = querystring.stringify({ username: usuario, password: senha, service: "moodle_mobile_app" });
         const req = https.request({
@@ -38,7 +35,10 @@ function tentarLogin(host, usuario, senha) {
 // Testa as credenciais do Moodle antes de iniciar o WhatsApp.
 // Retorna true se pode prosseguir, false se deve abortar.
 async function verificarMoodle() {
-    const host    = (process.env.MOODLE_API_HOST || "").trim().replace(/^https?:\/\//, "").replace(/\/+$/, "") || process.env.MOODLE_HOST || "moodle4.uesb.br";
+    // Mesmo caminho que o bot usa para chegar ao Moodle (direto, repasse ou proxy; ver docs/REPASSE.md)
+    let acesso;
+    try { acesso = configAcesso(); }
+    catch (e) { console.error(`[ERRO] ${e.message}`); return false; }
     const usuario = (process.env.MOODLE_USER || "").trim();
     const senha   = process.env.MOODLE_PASS || "";
 
@@ -50,9 +50,9 @@ async function verificarMoodle() {
         return false;
     }
 
-    console.log("[MOODLE] Verificando credenciais...");
+    console.log(`[MOODLE] Verificando credenciais${acesso.modo === "direto" ? "" : ` (acesso ${acesso.descricao})`}...`);
     try {
-        const res = await tentarLogin(host, usuario, senha);
+        const res = await tentarLogin(acesso.apiHost, usuario, senha, acesso.agente);
         if (res.token) { console.log("[MOODLE] Autenticado com sucesso."); return true; }
         if (res.errorcode === "invalidlogin") {
             console.error("[ERRO] Usuario ou senha do Moodle incorretos. Corrija MOODLE_USER/MOODLE_PASS em moodle/.env");

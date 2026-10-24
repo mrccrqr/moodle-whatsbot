@@ -6,7 +6,8 @@
     "start": "node index.js",
     "test": "node --test testes/*.test.js",
     "simular": "node testes/simular.js",
-    "whatsapp": "node testes/whatsapp.js"
+    "whatsapp": "node testes/whatsapp.js",
+    "repasse": "node scripts/repasse.js"
   },
   "description": "Bot WhatsApp para monitoramento e notificacoes automaticas do Moodle",
   "license": "ISC",

@@ -11,7 +11,7 @@
 
 const https        = require("https");
 const { DateTime } = require("luxon");
-const { ZONA, ADMIN, HOST } = require("./config");
+const { ZONA, ADMIN, HOST, ACESSO } = require("./config");
 const { agora, log } = require("./utils");
 const { getCache, salvarCache } = require("./cache");
 
@@ -63,7 +63,9 @@ async function registrarFalha() {
     if (doBrasil === "ok")
         msg = `Não consigo acessar o Moodle desde ${desde}, mas ele está no ar: testei a partir do Brasil e respondeu normalmente. ` +
               `O Moodle está bloqueando o acesso do servidor do bot.` +
-              (process.env.MOODLE_PROXY ? ` A saída pelo proxy (MOODLE_PROXY) também não está funcionando.` : ` Dá para contornar com MOODLE_PROXY (ver README).`) +
+              (ACESSO.modo === "direto"
+                  ? ` Dá para contornar com um repasse no Brasil: npm run repasse -- criar (ver docs/REPASSE.md).`
+                  : ` O acesso ${ACESSO.descricao} também não está funcionando.`) +
               ` Aviso aqui quando o acesso voltar.`;
     else if (doBrasil === "falha")
         msg = `O Moodle está fora do ar desde ${desde} (não responde nem a partir do Brasil). Aviso aqui quando voltar.`;

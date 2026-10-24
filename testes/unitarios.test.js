@@ -514,3 +514,37 @@ test("acesso ao Moodle: fora do ar de verdade (nao responde nem do Brasil)", asy
         if (anterior.estado) cache._acessoMoodle = anterior.estado; else delete cache._acessoMoodle;
     }
 });
+
+// ---------------------------------------------------------------- acesso ao Moodle (direto / repasse / proxy)
+
+test("acesso: padrao direto; repasse e proxy pelo .env; desligar sem apagar a URL", () => {
+    const { configAcesso } = require("../utils/acessoMoodle");
+    const URL_R = "https://abc123.execute-api.sa-east-1.amazonaws.com/";
+
+    const d = configAcesso({});
+    assert.equal(d.modo, "direto");
+    assert.equal(d.apiHost, "moodle4.uesb.br");
+
+    const r = configAcesso({ MOODLE_ACESSO: "repasse", MOODLE_REPASSE_URL: URL_R });
+    assert.equal(r.modo, "repasse");
+    assert.equal(r.apiHost, "abc123.execute-api.sa-east-1.amazonaws.com", "chamadas saem pelo repasse");
+    assert.equal(r.host, "moodle4.uesb.br", "links para os alunos continuam no Moodle");
+
+    const off = configAcesso({ MOODLE_ACESSO: "direto", MOODLE_REPASSE_URL: URL_R });
+    assert.equal(off.apiHost, "moodle4.uesb.br", "MOODLE_ACESSO=direto desliga o repasse sem apagar a URL");
+
+    const antigo = configAcesso({ MOODLE_API_HOST: "abc123.execute-api.sa-east-1.amazonaws.com" });
+    assert.equal(antigo.modo, "repasse", ".env antigo (MOODLE_API_HOST) continua funcionando");
+
+    const p = configAcesso({ MOODLE_ACESSO: "proxy", MOODLE_PROXY: "socks5://127.0.0.1:1080" });
+    assert.equal(p.modo, "proxy");
+    assert.ok(p.agente, "proxy SOCKS configurado");
+    assert.equal(p.apiHost, "moodle4.uesb.br");
+});
+
+test("acesso: configuracao incompleta da erro claro na inicializacao", () => {
+    const { configAcesso } = require("../utils/acessoMoodle");
+    assert.throws(() => configAcesso({ MOODLE_ACESSO: "repasse" }), /MOODLE_REPASSE_URL esta vazio/);
+    assert.throws(() => configAcesso({ MOODLE_ACESSO: "proxy" }), /MOODLE_PROXY esta vazio/);
+    assert.throws(() => configAcesso({ MOODLE_ACESSO: "vpn" }), /MOODLE_ACESSO invalido/);
+});
