@@ -212,6 +212,23 @@ Brasilia, mesmo numa VPS na Europa). Para migrar: copie `moodle/` (`.env` e `cac
 (sessao do WhatsApp, evita escanear o QR de novo; mantenha privada) e rode com um gerenciador de processo
 (`pm2` ou `systemd`). Nunca rode duas instancias com a mesma pasta `auth/` ao mesmo tempo.
 
+### Moodle bloqueado para o servidor (VPS fora do Brasil)
+
+Desde 23/10/2026 a UESB bloqueia o acesso ao Moodle a partir de fora do Brasil (o firewall descarta a conexao;
+cabecalhos como X-Forwarded-For nao ajudam, a conexao nem abre). Com o bot numa VPS no exterior, as chamadas ao
+Moodle saem por um repasse em Sao Paulo: um **API Gateway (HTTP API) da AWS na regiao sa-east-1**, que repassa
+`/{proxy+}` para `https://moodle4.uesb.br/{proxy}`. Custo: gratis no primeiro ano, depois ~US$ 0,01/mes.
+
+```env
+MOODLE_API_HOST=xxxxxxxx.execute-api.sa-east-1.amazonaws.com
+```
+
+Os links enviados aos alunos continuam em `MOODLE_HOST`. Sem `MOODLE_API_HOST`, o bot acessa o Moodle direto.
+Alternativa: `MOODLE_PROXY=socks5://host:porta` (proxy SOCKS com saida no Brasil).
+
+Se o bot perder o acesso ao Moodle por mais de 30 min, ele avisa o admin **uma vez**, dizendo se o Moodle esta
+fora do ar ou bloqueando o servidor (testa a partir do Brasil), e **uma vez** quando o acesso volta.
+
 ## Proximos passos
 
 Ver [ROADMAP.md](ROADMAP.md) (aula ao vivo, aulas quinzenais automaticas, pontos ainda manuais) e
