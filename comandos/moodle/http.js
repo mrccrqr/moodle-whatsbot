@@ -3,7 +3,7 @@
 const https       = require("https");
 const http        = require("http");
 const querystring = require("querystring");
-const { HOST, TG_TOKEN, TG_CHAT_ID } = require("./config");
+const { HOST, API_HOST, TG_TOKEN, TG_CHAT_ID } = require("./config");
 const { sleep, log } = require("./utils");
 const saude          = require("./saude");
 
@@ -37,7 +37,7 @@ function postForm(caminho, payload, ms = 15000) {
     return new Promise((resolve, reject) => {
         const body = querystring.stringify(payload);
         const req  = https.request({
-            hostname: HOST, path: caminho, method: "POST", timeout: ms, agent: agenteMoodle,
+            hostname: API_HOST, path: caminho, method: "POST", timeout: ms, agent: agenteMoodle,
             headers: {
                 "Content-Type":   "application/x-www-form-urlencoded",
                 "Content-Length": Buffer.byteLength(body),
@@ -71,6 +71,8 @@ function baixarArquivo(url, redir = 0) {
         if (redir > 5) return reject(new Error("Muitos redirecionamentos"));
         const lib = url.startsWith("https") ? https : http;
         const doMoodle = (() => { try { return new URL(url).hostname === HOST; } catch { return false; } })();
+        // Arquivo do Moodle: baixa pelo mesmo caminho das chamadas (MOODLE_API_HOST), se configurado
+        if (doMoodle && API_HOST !== HOST) { const u = new URL(url); u.hostname = API_HOST; url = u.toString(); }
         lib.get(url, { headers: { "User-Agent": "MoodleMobile 5.1.1 (51100)" }, ...(doMoodle && agenteMoodle ? { agent: agenteMoodle } : {}) }, res => {
             if (res.statusCode === 301 || res.statusCode === 302)
                 return baixarArquivo(res.headers.location, redir + 1).then(resolve).catch(reject);

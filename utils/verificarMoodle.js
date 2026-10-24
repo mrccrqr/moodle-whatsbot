@@ -38,7 +38,7 @@ function tentarLogin(host, usuario, senha) {
 // Testa as credenciais do Moodle antes de iniciar o WhatsApp.
 // Retorna true se pode prosseguir, false se deve abortar.
 async function verificarMoodle() {
-    const host    = process.env.MOODLE_HOST || "moodle4.uesb.br";
+    const host    = (process.env.MOODLE_API_HOST || "").trim().replace(/^https?:\/\//, "").replace(/\/+$/, "") || process.env.MOODLE_HOST || "moodle4.uesb.br";
     const usuario = (process.env.MOODLE_USER || "").trim();
     const senha   = process.env.MOODLE_PASS || "";
 
