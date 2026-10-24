@@ -51,11 +51,13 @@ const aguardandoBot = setInterval(async () => {
     clearInterval(aguardandoBot);
     log("ok", "Bot detectado, inicializando...");
 
+    // Acesso ao Moodle voltou depois de um periodo sem acesso: confere o que mudou antes de saude.js avisar o admin
+    saude.aoVoltar(() => recuperar(null));
+
     try { await aguardarMoodle(); }
     catch { return; }
 
     await recuperar(getCache()._vivoEm);
-    saude.aoVoltar(() => recuperar(null)); // acesso ao Moodle voltou: confere o que mudou (saude.js avisa o admin)
 
     for (const [h, m, nome, fn] of AGENDA) agendar(h, m, nome, fn);
     log("ok", `${AGENDA.length} verificacoes agendadas por dia.`);
