@@ -56,17 +56,20 @@ async function enviarDetalhes(destinos, a, prefixo = "") {
     const anexos = todosAnexos(a);
     if (!anexos.length) return;
 
-    for (const jid of destinos) { await wa(jid, `${prefixo}${anexos.length === 1 ? "Arquivo:" : "Arquivos:"}`); await sleep(300); }
-
+    // Baixa antes de anunciar: o "Arquivo:" so vai se houver arquivo para mandar logo em seguida
+    const baixados = [];
     for (const arq of anexos) {
         try {
-            const { buffer, mimetype } = await baixarArquivoComRetry(arq.fileurl);
-            await broadcastArquivo(buffer, mimetype, arq.filename, destinos);
+            baixados.push({ ...(await baixarArquivoComRetry(arq.fileurl)), filename: arq.filename });
         } catch (e) {
             log("erro", `Falha ao baixar ${arq.filename}: ${e.message}`);
             await wa(ADMIN, `*Moodle Monitor*\nFalha ao baixar anexo: ${arq.filename}\n${e.message}`);
         }
     }
+    if (!baixados.length) return;
+
+    for (const jid of destinos) { await wa(jid, `${prefixo}${baixados.length === 1 ? "Arquivo:" : "Arquivos:"}`); await sleep(300); }
+    for (const { buffer, mimetype, filename } of baixados) await broadcastArquivo(buffer, mimetype, filename, destinos);
 }
 
 // Envia apenas os anexos novos de uma atividade atualizada

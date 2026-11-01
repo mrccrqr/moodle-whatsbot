@@ -548,3 +548,19 @@ test("acesso: configuracao incompleta da erro claro na inicializacao", () => {
     assert.throws(() => configAcesso({ MOODLE_ACESSO: "proxy" }), /MOODLE_PROXY esta vazio/);
     assert.throws(() => configAcesso({ MOODLE_ACESSO: "vpn" }), /MOODLE_ACESSO invalido/);
 });
+
+test("acesso: arquivo pelo repasse vai com o caminho em ?file= (API Gateway decodifica %20 e o Moodle da 400)", () => {
+    const { urlViaRepasse } = require("../comandos/moodle/http");
+    const H = "moodle4.uesb.br", R = "abc123.execute-api.sa-east-1.amazonaws.com";
+    const url = `https://${H}/tokenpluginfile.php/CHAVE/81465/mod_assign/introattachment/0/%5BPI%5D%20Atividade%20Avaliativa%20%2303.pdf?offline=1&lang=pt_br`;
+
+    const u = new URL(urlViaRepasse(url, H, R));
+    assert.equal(u.hostname, R);
+    assert.equal(u.pathname, "/tokenpluginfile.php");
+    assert.equal(u.searchParams.get("file"), "/CHAVE/81465/mod_assign/introattachment/0/[PI] Atividade Avaliativa #03.pdf");
+    assert.equal(u.searchParams.get("offline"), "1");
+    assert.ok(!u.toString().includes(" "), "nada de espaco cru na URL");
+
+    assert.equal(urlViaRepasse(url, H, H), url, "sem repasse: URL intacta");
+    assert.equal(urlViaRepasse("https://outro.site/a b.pdf", H, R), "https://outro.site/a b.pdf", "arquivo de fora do Moodle: intacto");
+});

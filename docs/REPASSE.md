@@ -32,6 +32,9 @@ Moodle (`/{proxy+}` -> `https://moodle4.uesb.br/{proxy}`). Nao tem codigo nem se
   primeiro ano; depois, ~US$ 1 por milhao -> menos de US$ 0,01 por mes.
 - **Limite:** 5 requisicoes por segundo (o bot nunca chega perto). Evita custo se alguem descobrir o endereco.
 - **Tamanho:** respostas de ate 10 MB (anexos maiores que isso nao baixam pelo repasse).
+- **Nomes de arquivo com espaco:** o API Gateway decodifica o caminho (`%20` vira espaco) e o Moodle
+  responde 400. Por isso, pelo repasse, o bot baixa anexos com o caminho no parametro
+  (`tokenpluginfile.php?file=/...`) em vez de no caminho da URL (`http.js`, `urlViaRepasse`).
 
 ### Chaves da AWS: onde ficam?
 

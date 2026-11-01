@@ -63,6 +63,25 @@ function postForm(caminho, payload, ms = 15000) {
     });
 }
 
+// URL de arquivo do Moodle para baixar pelo repasse (API Gateway).
+// O API Gateway decodifica o caminho antes de repassar: "%20" chega como espaco cru e o Apache do
+// Moodle responde 400 (ex.: "[PI] Atividade Avaliativa #03.pdf"). Por isso o caminho do arquivo vai
+// no parametro ?file=, que o Moodle aceita no lugar do caminho apos o .php.
+function urlViaRepasse(url, host = HOST, apiHost = API_HOST) {
+    let u;
+    try { u = new URL(url); } catch { return url; }
+    if (u.hostname !== host || apiHost === host) return url;
+    u.hostname = apiHost;
+    const m = u.pathname.match(/^(\/(?:webservice\/|token)?pluginfile\.php)(\/.+)$/);
+    if (m) {
+        let arquivo;
+        try { arquivo = m[2].split("/").map(decodeURIComponent).join("/"); } catch { arquivo = m[2]; }
+        u.pathname = m[1];
+        u.search = new URLSearchParams([["file", arquivo], ...u.searchParams]).toString();
+    }
+    return u.toString();
+}
+
 // Download de arquivo com suporte a redirect
 function baixarArquivo(url, redir = 0) {
     return new Promise((resolve, reject) => {
@@ -70,7 +89,7 @@ function baixarArquivo(url, redir = 0) {
         const lib = url.startsWith("https") ? https : http;
         const doMoodle = (() => { try { return new URL(url).hostname === HOST; } catch { return false; } })();
         // Arquivo do Moodle: baixa pelo mesmo caminho das chamadas (repasse), se configurado
-        if (doMoodle && API_HOST !== HOST) { const u = new URL(url); u.hostname = API_HOST; url = u.toString(); }
+        if (doMoodle) url = urlViaRepasse(url);
         lib.get(url, { headers: { "User-Agent": "MoodleMobile 5.1.1 (51100)" }, ...(doMoodle && agenteMoodle ? { agent: agenteMoodle } : {}) }, res => {
             if (res.statusCode === 301 || res.statusCode === 302)
                 return baixarArquivo(res.headers.location, redir + 1).then(resolve).catch(reject);
@@ -135,4 +154,4 @@ function telegramPost(text) {
     });
 }
 
-module.exports = { classificarErro, postForm, baixarArquivo, baixarArquivoComRetry, telegramPost };
+module.exports = { classificarErro, postForm, urlViaRepasse, baixarArquivo, baixarArquivoComRetry, telegramPost };
