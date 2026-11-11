@@ -30,7 +30,7 @@ function purgarCache() {
     let n = 0;
     for (const k of Object.keys(cache)) {
         if ((k.startsWith("venc_") && cache[k]?.duedate < limiteVenc) || (k.startsWith("lemb_") && cache[k]?.prazo < limiteVenc)) { delete cache[k]; n++; continue; }
-        const m = k.match(/^(?:aula_\d+|forum_\d+|extra_.+)_(\d{4}-\d{2}-\d{2})$/);
+        const m = k.match(/^(?:aula_\d+|aulacurso_\d+|forum_\d+|extra_.+)_(\d{4}-\d{2}-\d{2})$/);
         if (m && m[1] < hoje) { delete cache[k]; n++; }
     }
     if (n > 0) { log("info", `Cache: ${n} entrada(s) antiga(s) removida(s).`); salvarCache(); }

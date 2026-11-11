@@ -32,7 +32,7 @@ notif.wa               = async (jid, texto) => { enviados.push({ tipo: "texto", 
 notif.broadcastArquivo = async (buffer, mime, nome, destinos, legenda) => { enviados.push({ tipo: "arquivo", nome, legenda, texto: buffer.toString("utf8") }); };
 
 const { enviarTextoOuArquivo, LIMITE_TEXTO } = require("../comandos/moodle/envios");
-const { montarMsgVencimentos, nomeDoEvento, diasAte } = require("../comandos/moodle/verificacoes");
+const { montarMsgVencimentos, obsVencimentos, agruparAulas, nomeDoEvento, diasAte } = require("../comandos/moodle/verificacoes");
 const { detectar, montarMsgNovidades, classificarPrazo } = require("../comandos/moodle/novidades");
 
 // ---------------------------------------------------------------- lembretes
@@ -563,4 +563,43 @@ test("acesso: arquivo pelo repasse vai com o caminho em ?file= (API Gateway deco
 
     assert.equal(urlViaRepasse(url, H, H), url, "sem repasse: URL intacta");
     assert.equal(urlViaRepasse("https://outro.site/a b.pdf", H, R), "https://outro.site/a b.pdf", "arquivo de fora do Moodle: intacto");
+});
+
+test("vencimentos: ja avisadas vao por ultimo, marcadas em negrito, com OBS separado", () => {
+    const prazo = ts("2026-11-10T23:59"), antes = ts("2026-10-26T23:59");
+    const lista = [
+        { curso: "Desenvolvimento Mobile I (2026.2)", nome: "Atividade 9", ts: prazo, link: "https://x/9", estendidoDe: antes },
+        { curso: "Desenvolvimento Mobile I (2026.2)", nome: "Atividade 8", ts: prazo, link: "https://x/8", estendidoDe: antes },
+        { curso: "Desenvolvimento Mobile I (2026.2)", nome: "Atividade 10", ts: prazo, link: "https://x/10", estendidoDe: null },
+    ];
+    const msg = montarMsgVencimentos(lista);
+    assert.match(msg, /^\*3 ATIVIDADES DE DESENVOLVIMENTO MOBILE I VENCEM HOJE\*/);
+    assert.match(msg, /- Atividade 10\n- Atividade 9 \*\(prazo estendido, antes: 26\/10 as 23h59\)\*\n- Atividade 8 \*/, "nova primeiro, avisadas depois");
+    assert.match(msg, /Links:\n- https:\/\/x\/10\n- https:\/\/x\/9\n- https:\/\/x\/8/, "links na mesma ordem");
+    assert.doesNotMatch(msg, /As marcadas/);
+    assert.equal(obsVencimentos(lista), "*OBS: AS 2 ÚLTIMAS EU JÁ AVISEI ANTES, É PRAZO ESTENDIDO*");
+
+    assert.equal(obsVencimentos([lista[0], lista[2]]), "*OBS: A ÚLTIMA EU JÁ AVISEI ANTES, É PRAZO ESTENDIDO*");
+    assert.equal(obsVencimentos([lista[0], lista[1]]), "*OBS: TODAS ESSAS EU JÁ AVISEI ANTES, É PRAZO ESTENDIDO*");
+    assert.equal(obsVencimentos([lista[2]]), null, "nenhuma avisada antes: sem OBS");
+    assert.equal(obsVencimentos([lista[0]]), null, "uma so: o titulo ja diz");
+});
+
+test("aulas: evento novo da mesma disciplina dentro do bloco ja avisado nao gera segundo aviso (09/11)", () => {
+    const ev = (id, hora, dur, curso = 10) => ({ id, course: { id: curso }, timestart: ts(`2026-11-09T${hora}`), timeduration: dur });
+    const dia = "2026-11-09", cache = {};
+
+    // 18h: atendimento 19h30 + aula 20h (nomes e descricoes diferentes) = um aviso
+    const r18 = agruparAulas([ev(12287, "19:30", 3600), ev(12553, "20:00", 1800)], cache, dia);
+    assert.equal(r18.novos.length, 1);
+    for (const g of r18.grupos) { for (const id of g.ids) cache[`aula_${id}_${dia}`] = true; cache[`aulacurso_${g.curso}_${dia}`] = g.fim; }
+
+    // 20h: os eventos anteriores ja passaram e o professor cadastrou outro as 20h30 (id novo)
+    const r20 = agruparAulas([ev(14376, "20:30", 3600)], cache, dia);
+    assert.equal(r20.novos.length, 0, "20h30 e continuacao da aula ja avisada");
+
+    // Outra disciplina no mesmo horario e avisada normalmente
+    assert.equal(agruparAulas([ev(99, "20:30", 3600, 11)], cache, dia).novos.length, 1);
+    // Mesma disciplina, aula bem depois do fim do bloco (mais de 1h): aviso proprio
+    assert.equal(agruparAulas([ev(100, "23:00", 3600)], cache, dia).novos.length, 1);
 });

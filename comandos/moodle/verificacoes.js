@@ -16,10 +16,14 @@ const { obterLinkDinamico }                             = require("./lti");
 const { enviarTextoOuArquivo, LIMITE_TEXTO, TODOS } = require("./envios");
 const { comGuard, cursosDoSemestre, prazosDoModulo, agoraS } = require("./comum");
 
+// Ja avisadas antes (prazo estendido/alterado) vao por ultimo, para o OBS poder dizer "as N ultimas"
+const ordenarVencimentos = lista => [...lista.filter(i => !i.estendidoDe), ...lista.filter(i => i.estendidoDe)];
+
 // Monta a mensagem de vencimentos do dia (lista unificada, com aviso de prazo estendido)
 function montarMsgVencimentos(lista) {
+    lista = ordenarVencimentos(lista);
     const n         = lista.length;
-    const estendeu  = i => i.estendidoDe ? ` (prazo ${i.estendidoDe < i.ts ? "estendido" : "alterado"}, antes: ${fmtData(i.estendidoDe)})` : "";
+    const estendeu  = i => i.estendidoDe ? ` *(prazo ${i.estendidoDe < i.ts ? "estendido" : "alterado"}, antes: ${fmtData(i.estendidoDe)})*` : "";
     const todasEst  = lista.every(i => i.estendidoDe && i.estendidoDe < i.ts);
     const disciplinas = lista.map(i => normalizarNomeDisciplina(i.curso));
     const prazos      = lista.map(i => fmtData(i.ts));
@@ -32,19 +36,28 @@ function montarMsgVencimentos(lista) {
         const ext = i.estendidoDe && i.estendidoDe < i.ts;
         return `*${i.estendidoDe ? (ext ? "PRAZO ESTENDIDO — " : "PRAZO ALTERADO — ") : ""}ATIVIDADE VENCE HOJE*\n\n` +
                `- Disciplina: ${disciplinas[0]}\n- ${i.nome}\n- Vencimento: ${prazos[0]}\n` +
-               (i.estendidoDe ? `\nJa avisei dessa atividade antes: o prazo era ${fmtData(i.estendidoDe)} e foi ${ext ? "estendido" : "alterado"}.\n` : "") +
+               (i.estendidoDe ? `\n*Ja avisei dessa atividade antes: o prazo era ${fmtData(i.estendidoDe)} e foi ${ext ? "estendido" : "alterado"}.*\n` : "") +
                `\nLink: ${i.link}`;
     }
     const titulo = todasEst ? `${n} ATIVIDADES COM PRAZO ESTENDIDO VENCEM HOJE` : `${n} ATIVIDADES VENCEM HOJE`;
-    const aviso  = lista.some(i => i.estendidoDe) && !todasEst
-        ? `\n\nAs marcadas com prazo estendido/alterado eu ja avisei antes.` : "";
     if (mesmaDisc) {
         const itens = lista.map((i, k) => `- ${i.nome}${mesmoPrazo ? "" : ` — ${prazos[k]}`}${estendeu(i)}`).join("\n");
         return `*${mesmaDisc && !todasEst ? `${n} ATIVIDADES DE ${disciplinas[0].toUpperCase()} VENCEM HOJE` : titulo}*\n\n${itens}\n\nLinks:\n${links}` +
-               (mesmoPrazo ? `\n\nVencimento: ${prazos[0]}` : "") + aviso;
+               (mesmoPrazo ? `\n\nVencimento: ${prazos[0]}` : "");
     }
     const itens = lista.map((i, k) => `- ${disciplinas[k]}: ${i.nome}${mesmoPrazo ? "" : ` — ${prazos[k]}`}${estendeu(i)}`).join("\n");
-    return `*${titulo}*\n\n${itens}\n\nLinks:\n${links}` + (mesmoPrazo ? `\n\nVencimento: ${prazos[0]}` : "") + aviso;
+    return `*${titulo}*\n\n${itens}\n\nLinks:\n${links}` + (mesmoPrazo ? `\n\nVencimento: ${prazos[0]}` : "");
+}
+
+// Mensagem separada, logo abaixo da lista, destacando as que ja foram avisadas antes (null se nao houver).
+// Com uma atividade so, o proprio titulo ja diz ("PRAZO ESTENDIDO — ATIVIDADE VENCE HOJE").
+function obsVencimentos(lista) {
+    const ja = lista.filter(i => i.estendidoDe);
+    if (lista.length < 2 || !ja.length) return null;
+    const ext  = ja.filter(i => i.estendidoDe < i.ts).length;
+    const tipo = ext === ja.length ? "ESTENDIDO" : ext === 0 ? "ALTERADO" : "ESTENDIDO/ALTERADO";
+    const quais = ja.length === lista.length ? "TODAS ESSAS" : ja.length === 1 ? "A ÚLTIMA" : `AS ${ja.length} ÚLTIMAS`;
+    return `*OBS: ${quais} EU JÁ AVISEI ANTES, É PRAZO ${tipo}*`;
 }
 
 // Nome limpo do evento de prazo do calendario ("X está marcado(a) para esta data", "Término de X", "X é devido")
@@ -107,6 +120,8 @@ const verificarVencimentos = comGuard("vencimentos", async () => {
     }
 
     await broadcast(montarMsgVencimentos(lista), TODOS());
+    const obs = obsVencimentos(lista);
+    if (obs) await broadcast(obs, TODOS());
 
     for (const i of lista) cache[`venc_${i.cmid}`] = { duedate: i.ts, dia: hoje };
     salvarCache();
@@ -305,20 +320,11 @@ const verificarAulasHoje = comGuard("aulas", async () => {
         })
         .sort((a, b) => a.timestart - b.timestart);
 
-    // Agrupa eventos duplicados: mesmo curso + mesmo link de sala em ate 2h de diferenca
-    // (ex.: "Atendimento 19h30" e "Aula 20h" na mesma sala viram uma so)
-    const grupos = [];
-    for (const aula of aulas) {
-        const sala = extrairLinkSala(aula.description) || aula.name;
-        const g = grupos.find(x => x.curso === aula.course?.id && x.sala === sala && aula.timestart - x.aula.timestart <= 7200);
-        if (g) g.ids.push(aula.id);
-        else grupos.push({ curso: aula.course?.id, sala, aula, ids: [aula.id] });
-    }
+    const { grupos, novos } = agruparAulas(aulas, cache, dataStr);
     log("info", `verificarAulasHoje: ${grupos.length > 0 ? `${grupos.length} aula(s)` : "nenhuma"}`);
 
     const itens = []; // { disciplina, horario, link, minutosAte, chaves }
-    for (const g of grupos) {
-        if (g.ids.some(id => cache[`aula_${id}_${dataStr}`])) continue;
+    for (const g of novos) {
         const disciplina   = normalizarNomeDisciplina(g.aula.course?.fullname || "");
         const linkDinamico = await obterLinkDinamico(g.aula.description);
         const ts           = DateTime.fromSeconds(g.aula.timestart).setZone(ZONA);
@@ -330,6 +336,12 @@ const verificarAulasHoje = comGuard("aulas", async () => {
             chaves:     g.ids.map(id => `aula_${id}_${dataStr}`),
             valor:      true,
         });
+    }
+    // Aulas ja avisadas (inclusive continuacoes) estendem o bloco da disciplina no dia
+    const blocos = {};
+    for (const g of grupos) {
+        const k = `aulacurso_${g.curso}_${dataStr}`;
+        blocos[k] = Math.max(blocos[k] || cache[k] || 0, g.fim);
     }
 
     // Aulas extras: disciplinas sem evento no calendario mas com horario fixo configurado
@@ -394,8 +406,30 @@ const verificarAulasHoje = comGuard("aulas", async () => {
         cache[l.chaveCache] = "link";
     }
 
-    if (itens.length || linksAvulsos.length) salvarCache();
+    // So depois do envio: se ele falhar, a aula continua pendente para o proximo check
+    Object.assign(cache, blocos);
+    if (itens.length || linksAvulsos.length || grupos.length) salvarCache();
 });
+
+// Agrupa os eventos de aula do dia por disciplina e separa os que ainda nao foram avisados.
+// Uma disciplina tem uma aula por "bloco": eventos que comecam ate MARGEM depois do fim do anterior sao a
+// mesma aula, seja qual for o nome, o link ou o id (ex.: "Atendimento 19h30", "Aula 20h" e um evento das
+// 20h30 cadastrado depois). O fim do bloco ja avisado fica no cache (aulacurso_<curso>_<dia>), entao um
+// evento novo dentro dele nao gera um segundo aviso nos checks seguintes.
+const MARGEM_AULA = 3600;
+function agruparAulas(aulas, cache, dataStr) {
+    const grupos = [];
+    for (const aula of [...aulas].sort((a, b) => a.timestart - b.timestart)) {
+        const curso = aula.course?.id ?? aula.name;
+        const fim   = aula.timestart + (aula.timeduration || 0);
+        const g = grupos.find(x => x.curso === curso && aula.timestart <= x.fim + MARGEM_AULA);
+        if (g) { g.ids.push(aula.id); g.fim = Math.max(g.fim, fim); }
+        else grupos.push({ curso, aula, ids: [aula.id], fim });
+    }
+    const avisado = g => g.ids.some(id => cache[`aula_${id}_${dataStr}`]) ||
+        g.aula.timestart <= (cache[`aulacurso_${g.curso}_${dataStr}`] ?? -Infinity) + MARGEM_AULA;
+    return { grupos, novos: grupos.filter(g => !avisado(g)) };
+}
 
 // Formata nota: "9.60 / 10.00" (escalas usam o texto do Moodle)
 function fmtNota(it) {
@@ -501,5 +535,5 @@ module.exports = {
     verificarLembretes, verificarAvisos, verificarVencimentos,
     verificarForuns, verificarAulasHoje,
     // Exportados para os testes (testes/unitarios.test.js)
-    montarMsgVencimentos, nomeDoEvento, diasAte,
+    montarMsgVencimentos, obsVencimentos, agruparAulas, nomeDoEvento, diasAte,
 };
